@@ -20,7 +20,7 @@
 
 ## 3. 状態と方向性
 
-- 構想段階（仕様 0.4）。装置の検証は行っていない。
+- 構想段階（仕様 0.5）。装置を確かめるための検証キットを作った。実物での検証はこれから。
 - 【決定】とした事項はまだない。以下は検討中の方向性である。
   - 平置きの配置で測る。
   - 回転台（キャンドゥのソーラー式回転台など）を使う方法を検討している。
@@ -52,6 +52,7 @@
 | [docs/04-polarimeter-mode.md](docs/04-polarimeter-mode.md) | 旋光の同時測定、推定法と誤差 |
 | [docs/05-lesson-design.md](docs/05-lesson-design.md) | 授業での使い方 |
 | [docs/06-open-issues.md](docs/06-open-issues.md) | 未決事項・要検証 |
+| [docs/07-verification-kit.md](docs/07-verification-kit.md) | 検証キット（光源ページ・記録ページ・解析スクリプト）の使い方 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 改訂履歴 |
 | [docs/reference/containers.md](docs/reference/containers.md) | 参考：同時測定用の容器の候補と確認方法 |
 | [docs/reference/prior-work.md](docs/reference/prior-work.md) | 参考：先行事例 |
@@ -62,9 +63,9 @@
 アプリの本体を作る前に、装置が成立するかを実物で確かめる。
 
 1. 回転台の回転速度と回転むらを、phyphox のジャイロで測る。光源のスマホを回転台に載せるだけでよい（POL-Q-03）。
-2. 検証キットを作る。光源ページ（POL-F-60〜65）と、枠を置いてフレームごとの生データを CSV に出す記録ページ（POL-F-41）の2つだけとし、解析はしない。
-3. 検証キットで、基準の紙に残る偏光を測る（POL-Q-01）。判定の目安は p/m が数%以下。
-4. 記録したデータで旋光角の推定法を比べる（POL-Q-21）。解析は表計算か Python で行う。
+2. 検証キット（`docs/07-verification-kit.md`）を GitHub Pages で公開し、iPhone と Android で動くか確かめる。
+3. 検証キットで、基準の紙に残る偏光を測る（POL-Q-01）。判定の目安は p/m が数%以下。露出を固定した記録で判断する。
+4. 記録したデータを `tools/analyze.py` にかけ、旋光角の推定法と比の取り方を比べる（POL-Q-21・22）。
 5. 結果をもとに、初版の装置構成と角度の取り方を決める（POL-Q-04）。
 
 実物が要らない POL-Q-14（技術構成）と POL-Q-15（共通原則の適用）は、並行して決められる。
@@ -74,12 +75,15 @@
 ```
 .
 ├── README.md        この文書
+├── index.html       検証キットの入口
+├── kit/             検証キット（光源ページ、記録ページ）
+├── tools/           解析スクリプト
 └── docs/
-    ├── 01〜06, CHANGELOG.md
+    ├── 01〜07, CHANGELOG.md
     ├── reference/   参考資料（仕様の本文ではないもの）
     └── common/      共通文書の写し
 ```
 
 - `docs/common/` は、仕様書群のリポジトリ（スマホ物理実験アプリ 仕様書）の `common/` の写しである。改訂は正本で行い、ここへ写す。
 - 改訂ルールは `docs/common/spec-conventions.md` に従う。コミットメッセージの先頭は `pol:` とする。
-- 実装を始めたら、`index.html` などをリポジトリの直下に置き、GitHub Pages で公開する。
+- GitHub Pages で main ブランチのルートを公開する。アプリ本体を作るときに、入口（`index.html`）を本体に差し替える。

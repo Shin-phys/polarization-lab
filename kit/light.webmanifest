@@ -1,0 +1,9 @@
+{
+  "name": "偏光ラボ 光源ページ",
+  "short_name": "光源",
+  "start_url": "light.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}

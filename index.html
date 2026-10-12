@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14161a">
+<title>偏光ラボ 検証キット</title>
+<style>
+  :root { --bg: #14161a; --panel: #1e2127; --line: #343943; --text: #eceef1; --muted: #9aa1ab; --accent: #4da3ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.6;
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .cards { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 560px) { .cards { grid-template-columns: 1fr 1fr; } }
+  a.card { display: block; text-decoration: none; color: var(--text); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-height: 120px; }
+  a.card:hover, a.card:focus { border-color: var(--accent); }
+  a.card b { display: block; font-size: 18px; margin-bottom: 4px; }
+  a.card span { color: var(--muted); font-size: 14px; }
+  h2 { font-size: 16px; margin: 28px 0 8px; }
+  ol, ul { padding-left: 1.3em; color: var(--text); font-size: 14px; }
+  li { margin: 4px 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>偏光ラボ 検証キット</h1>
+  <p class="sub">装置が成立するかを実物で確かめるための2ページです。解析はせず、数値を CSV に残します。</p>
+
+  <div class="cards">
+    <a class="card" href="kit/light.html"><b>光源ページ</b><span>回転台に載せるスマホで開く。一様な白（または単色）を全画面で表示する。</span></a>
+    <a class="card" href="kit/record.html"><b>記録ページ</b><span>上から見下ろすスマホで開く。円形の枠を置き、フレームごとの明るさを記録する。</span></a>
+  </div>
+
+  <h2>手順の概略</h2>
+  <ol>
+    <li>光源のスマホで光源ページを開き、「表示を始める」を押す。偏光フィルムと穴あきの紙を載せ、回転台に置く。</li>
+    <li>測定用のスマホで記録ページを開き、カメラを開始する。カメラの前には偏光フィルムを貼る。</li>
+    <li>基準（紙）と偏光（穴）などの枠を置き、記録する。</li>
+    <li>CSV を保存し、表計算か <code>tools/analyze.py</code> で解析する。</li>
+  </ol>
+  <p class="muted">確かめる項目と手順の詳細は、リポジトリの <a href="https://github.com/Shin-phys/polarization-lab/blob/main/docs/07-verification-kit.md">docs/07-verification-kit.md</a> にあります。カメラを使うので、HTTPS のページ（GitHub Pages など）で開いてください。</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<title>記録ページ｜偏光ラボ 検証キット</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1e2127; --line: #343943; --text: #eceef1; --muted: #9aa1ab;
+    --accent: #4da3ff; --warn: #ffb020; --bad: #ff5a5a; --ok: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 15px; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 17px; margin: 0; }
+  header a { color: var(--accent); font-size: 13px; margin-left: auto; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px 16px 40px;
+    grid-template-areas: "view" "controls" "data"; }
+  #viewCard { grid-area: view; position: sticky; top: 0; z-index: 2; box-shadow: 0 6px 12px var(--bg); }
+  #controls { grid-area: controls; }
+  #data { grid-area: data; }
+  @media (min-width: 900px) {
+    main { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); align-items: start;
+      grid-template-areas: "view controls" "data controls"; }
+    #viewCard { position: static; box-shadow: none; }
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .card h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+  main > * { min-width: 0; }
+  #view { width: 100%; max-width: 100%; height: auto; display: block; background: #000; border-radius: 8px; touch-action: none; }
+  #chart { width: 100%; height: 160px; display: block; background: #0d0f12; border-radius: 8px; margin-top: 10px; }
+  video { display: none; }
+  button, select, input[type=text] {
+    font: inherit; color: var(--text); background: #2a2e35; border: 1px solid #3c424c; border-radius: 10px;
+    padding: 10px 12px; min-height: 46px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.rec { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .45; }
+  input[type=text] { width: 100%; }
+  input[type=range] { width: 100%; height: 34px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  .row > * { flex: 1 1 auto; min-width: 0; }
+  select { max-width: 100%; text-overflow: ellipsis; }
+  .grow { flex: 3 1 160px; }
+  .hint { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 6px 0; }
+  .stat { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .warn { color: var(--warn); }
+  .bad { color: var(--bad); }
+  .ok { color: var(--ok); }
+  #msg { min-height: 1.3em; font-size: 13px; margin: 8px 0 0; line-height: 1.45; }
+  pre.settings { font-size: 11px; color: var(--muted); white-space: pre-wrap; word-break: break-all; margin: 6px 0 0; max-height: 140px; overflow: auto; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>記録ページ</h1>
+  <span class="stat" id="fps">—</span>
+  <a href="../index.html">入口へ</a>
+</header>
+
+<main>
+  <div class="card" id="viewCard">
+    <canvas id="view" width="640" height="480"></canvas>
+    <video id="video" playsinline muted autoplay></video>
+    <p id="msg"></p>
+  </div>
+
+  <section id="data">
+    <div class="card">
+      <h2>明るさの変化</h2>
+      <canvas id="chart" style="margin-top:0"></canvas>
+      <div class="row">
+        <span class="stat">グラフの色</span>
+        <select id="chartCh">
+          <option value="0">R</option><option value="1" selected>G</option><option value="2">B</option>
+        </select>
+        <span class="stat" id="chartNote">直近15秒・各枠の平均値（補正なし）</span>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>各枠の値（0〜255、補正なし）</h2>
+      <table id="table"><thead><tr><th>枠</th><th>R</th><th>G</th><th>B</th><th>白飛び</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section id="controls">
+    <div class="card">
+      <h2>1. カメラ</h2>
+      <div class="row">
+        <select id="camSel" class="grow"><option value="">背面カメラ（既定）</option></select>
+        <select id="resSel">
+          <option value="480">処理幅 480</option>
+          <option value="640" selected>処理幅 640</option>
+          <option value="960">処理幅 960</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="primary" id="camBtn">カメラを開始</button>
+      </div>
+      <div class="row">
+        <button id="lockBtn" disabled>露出・ピント・色を固定</button>
+        <button id="autoBtn" disabled>自動に戻す</button>
+      </div>
+      <p class="hint" id="lockMsg">固定できるかは端末によります。固定できない端末でも記録はできます。</p>
+      <details><summary>カメラの設定値</summary><pre class="settings" id="settings">—</pre></details>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>2. 枠を置く</h2>
+      <div class="row">
+        <select id="roleSel" class="grow">
+          <option value="ref">基準（紙）</option>
+          <option value="hole">偏光（穴）</option>
+          <option value="blank">ブランク（水）</option>
+          <option value="sample">試料</option>
+        </select>
+        <button id="addBtn">枠を追加</button>
+      </div>
+      <p class="hint">枠は映像の上でドラッグして動かせます。選んだ枠（太線）の大きさを下で変えます。穴の枠は、穴より一回り小さく置きます。</p>
+      <div class="row">
+        <span class="stat">大きさ</span>
+        <input type="range" id="radius" min="0.005" max="0.25" step="0.001" value="0.05" class="grow">
+        <button id="delBtn">枠を削除</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>3. 記録する</h2>
+      <div class="row">
+        <input type="text" id="note" placeholder="メモ（条件。例：紙1枚、容器なし、回転台A）">
+      </div>
+      <div class="row">
+        <select id="durSel">
+          <option value="0">手動で止める</option>
+          <option value="30">30秒で止める</option>
+          <option value="60" selected>60秒で止める</option>
+          <option value="120">120秒で止める</option>
+          <option value="300">300秒で止める</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="rec" id="recBtn" disabled>記録開始</button>
+      </div>
+      <p class="stat" id="recStat">記録なし</p>
+      <div class="row">
+        <button id="csvBtn" disabled>CSVを保存</button>
+        <button id="pngBtn" disabled>画像を保存</button>
+      </div>
+      <p class="hint">CSV には、フレームごとの時刻と各枠の R・G・B の平均値を、ガンマ補正前・比を取る前の値で残します。解析は表計算か <code>tools/analyze.py</code> で行います。</p>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const video = $('video'), view = $('view'), ctx = view.getContext('2d', { willReadFrequently: true });
+  const chart = $('chart'), cctx = chart.getContext('2d');
+
+  const ROLE = {
+    ref:    { name: '基準',     prefix: 'ref',   color: '#ffffff' },
+    hole:   { name: '偏光（穴）', prefix: 'hole',  color: '#ffb020' },
+    blank:  { name: 'ブランク',  prefix: 'blank', color: '#4da3ff' },
+    sample: { name: '試料',     prefix: 's',     color: '#3ecf8e' },
+  };
+  const SAMPLE_COLORS = ['#3ecf8e', '#ff6ec7', '#b98cff', '#ff8a4d', '#9be15d', '#5ee0e6'];
+  const SAT_LEVEL = 250, SAT_WARN = 0.01, DARK_LEVEL = 10;
+  const CHART_SEC = 15;
+
+  let stream = null, track = null;
+  let W = 640, H = 480;
+  let rois = [];            // {id, role, label, x, y, r}  x,y: 0..1 / r: 横幅に対する比
+  let selected = null;
+  let masks = new Map();    // id -> Int32Array of byte offsets
+  let masksDirty = true;
+  let lastVals = new Map(); // id -> [r,g,b,sat]
+  const hist = [];          // {t, vals: Map}
+  const frameTimes = [];
+  let frameCount = 0, prevPresented = null, droppedTotal = 0;
+
+  let recording = false, saved = true, recRows = [], recT0 = 0, recMeta = null, recTimer = null, recDur = 0;
+  let wakeLock = null;
+
+  // ---------- 保存 ----------
+  function saveState() {
+    try {
+      localStorage.setItem('pol-kit-record', JSON.stringify({
+        rois, res: $('resSel').value, cam: $('camSel').value, ch: $('chartCh').value, dur: $('durSel').value }));
+    } catch (e) {}
+  }
+  function loadState() {
+    try {
+      const s = JSON.parse(localStorage.getItem('pol-kit-record') || '{}');
+      if (Array.isArray(s.rois)) rois = s.rois.filter(r => ROLE[r.role] && [r.x, r.y, r.r].every(Number.isFinite));
+      if (s.res) $('resSel').value = s.res;
+      if (s.ch) $('chartCh').value = s.ch;
+      if (s.dur) $('durSel').value = s.dur;
+      return s;
+    } catch (e) { return {}; }
+  }
+
+  // ---------- 枠 ----------
+  function relabel() {
+    const count = {};
+    for (const r of rois) {
+      count[r.role] = (count[r.role] || 0) + 1;
+      r.label = ROLE[r.role].prefix + count[r.role];
+    }
+  }
+  function roiColor(r) {
+    if (r.role !== 'sample') return ROLE[r.role].color;
+    const i = parseInt(r.label.slice(1), 10) - 1;
+    return SAMPLE_COLORS[i % SAMPLE_COLORS.length];
+  }
+  function addRoi(role) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const rad = Number($('radius').value);
+    // 既存の枠と重ならない位置を、中央から順に探す
+    let pos = { x: 0.5, y: 0.5 };
+    const free = q => rois.every(o => Math.hypot((q.x - o.x) * W, (q.y - o.y) * H) > (o.r + rad) * W);
+    search: for (let ring = 0; ring < 6; ring++) {
+      const n = ring === 0 ? 1 : ring * 6;
+      for (let k = 0; k < n; k++) {
+        const a = 2 * Math.PI * k / n, d = ring * 2.2 * rad;
+        const q = { x: 0.5 + d * Math.cos(a), y: 0.5 + d * Math.sin(a) * W / H };
+        if (q.x > 0 && q.x < 1 && q.y > 0 && q.y < 1 && free(q)) { pos = q; break search; }
+      }
+    }
+    const r = { id, role, label: '', x: pos.x, y: pos.y, r: rad };
+    rois.push(r); relabel(); selected = r; masksDirty = true; syncRadius(); saveState(); buildTable();
+  }
+  function deleteSelected() {
+    if (!selected) return;
+    rois = rois.filter(r => r !== selected); selected = null; relabel(); masksDirty = true; saveState(); buildTable();
+  }
+  function syncRadius() { if (selected) $('radius').value = selected.r; }
+
+  function buildMasks() {
+    masks = new Map();
+    for (const r of rois) {
+      const cx = r.x * W, cy = r.y * H, rad = r.r * W, rad2 = rad * rad;
+      const x0 = Math.max(0, Math.floor(cx - rad)), x1 = Math.min(W - 1, Math.ceil(cx + rad));
+      const y0 = Math.max(0, Math.floor(cy - rad)), y1 = Math.min(H - 1, Math.ceil(cy + rad));
+      const list = [];
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+        if (dx * dx + dy * dy <= rad2) list.push((y * W + x) * 4);
+      }
+      masks.set(r.id, Int32Array.from(list));
+    }
+    masksDirty = false;
+  }
+
+  // 映像の上で枠を動かす
+  let drag = null;
+  function canvasPoint(ev) {
+    const b = view.getBoundingClientRect();
+    return { x: (ev.clientX - b.left) / b.width, y: (ev.clientY - b.top) / b.height };
+  }
+  view.addEventListener('pointerdown', ev => {
+    const p = canvasPoint(ev);
+    // 選択中の枠を優先し、次に新しい枠（上に描かれている枠）を優先する
+    const hit = r => {
+      const d = Math.hypot((p.x - r.x) * W, (p.y - r.y) * H);
+      return d <= Math.max(r.r * W, 24 * W / view.getBoundingClientRect().width);
+    };
+    let best = selected && hit(selected) ? selected : null;
+    if (!best) for (let i = rois.length - 1; i >= 0; i--) if (hit(rois[i])) { best = rois[i]; break; }
+    selected = best; syncRadius();
+    if (best) {
+      if (recording) return;
+      drag = { r: best, dx: p.x - best.x, dy: p.y - best.y, id: ev.pointerId };
+      view.setPointerCapture(ev.pointerId);
+    }
+  });
+  view.addEventListener('pointermove', ev => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const p = canvasPoint(ev);
+    drag.r.x = Math.min(1, Math.max(0, p.x - drag.dx));
+    drag.r.y = Math.min(1, Math.max(0, p.y - drag.dy));
+    masksDirty = true;
+  });
+  const endDrag = () => { if (drag) { drag = null; saveState(); } };
+  view.addEventListener('pointerup', endDrag);
+  view.addEventListener('pointercancel', endDrag);
+
+  $('radius').addEventListener('input', () => {
+    if (!selected || recording) return;
+    selected.r = Number($('radius').value); masksDirty = true; saveState();
+  });
+  $('addBtn').addEventListener('click', () => { if (!recording) addRoi($('roleSel').value); });
+  $('delBtn').addEventListener('click', () => { if (!recording) deleteSelected(); });
+
+  // ---------- カメラ ----------
+  async function listCameras() {
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const sel = $('camSel'), cur = sel.value;
+      sel.innerHTML = '<option value="">背面カメラ（既定）</option>' +
+        devs.map((d, i) => `<option value="${d.deviceId}">${(d.label || 'カメラ ' + (i + 1)).replace(/</g, '&lt;')}</option>`).join('');
+      if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+    } catch (e) {}
+  }
+
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMsg('このブラウザではカメラを使えません。HTTPS のページで開いているか確認してください。', 'bad'); return;
+    }
+    stopCamera();
+    const camId = $('camSel').value;
+    const v = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+    if (camId) v.deviceId = { exact: camId }; else v.facingMode = { ideal: 'environment' };
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: v, audio: false });
+    } catch (e) {
+      setMsg('カメラを開始できませんでした（' + e.name + '）。', 'bad'); return;
+    }
+    track = stream.getVideoTracks()[0];
+    video.srcObject = stream;
+    await video.play().catch(() => {});
+    await new Promise(res => { if (video.videoWidth) res(); else video.onloadedmetadata = () => res(); });
+    resize();
+    await listCameras();
+    if (camId) $('camSel').value = camId;
+    $('lockBtn').disabled = false; $('autoBtn').disabled = false; $('recBtn').disabled = false;
+    $('camBtn').textContent = 'カメラを再開始';
+    showSettings();
+    saveState();
+    setMsg('');
+    startLoop();
+  }
+  function stopCamera() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = null; track = null;
+  }
+  function resize() {
+    const vw = video.videoWidth || 640, vh = video.videoHeight || 480;
+    const target = Number($('resSel').value);
+    const scale = Math.min(1, target / vw);
+    W = Math.round(vw * scale); H = Math.round(vh * scale);
+    view.width = W; view.height = H;
+    masksDirty = true;
+  }
+
+  function showSettings() {
+    if (!track) return;
+    const s = track.getSettings ? track.getSettings() : {};
+    const keep = ['deviceId', 'width', 'height', 'frameRate', 'facingMode', 'exposureMode', 'exposureTime',
+      'exposureCompensation', 'iso', 'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature', 'zoom'];
+    const o = {}; for (const k of keep) if (k in s) o[k] = s[k];
+    $('settings').textContent = JSON.stringify(o, null, 1) + '\n映像: ' + (video.videoWidth + '×' + video.videoHeight) + '　処理: ' + W + '×' + H;
+  }
+
+  async function lockCamera() {
+    if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const s = track.getSettings ? track.getSettings() : {};
+    const result = [];
+    const tryApply = async (name, c) => {
+      try { await track.applyConstraints({ advanced: [c] }); result.push(name + '○'); }
+      catch (e) { result.push(name + '×'); }
+    };
+    if (caps.exposureMode && caps.exposureMode.includes('manual')) {
+      const c = { exposureMode: 'manual' }; if (s.exposureTime) c.exposureTime = s.exposureTime;
+      await tryApply('露出', c);
+    } else result.push('露出：非対応');
+    if (caps.focusMode && caps.focusMode.includes('manual')) {
+      const c = { focusMode: 'manual' }; if (s.focusDistance !== undefined) c.focusDistance = s.focusDistance;
+      await tryApply('ピント', c);
+    } else if (caps.focusMode && caps.focusMode.includes('single-shot')) await tryApply('ピント', { focusMode: 'single-shot' });
+    else result.push('ピント：非対応');
+    if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes('manual')) {
+      const c = { whiteBalanceMode: 'manual' }; if (s.colorTemperature) c.colorTemperature = s.colorTemperature;
+      await tryApply('色', c);
+    } else result.push('色：非対応');
+    lockState = result.join('、');
+    $('lockMsg').textContent = '固定の結果：' + lockState;
+    showSettings();
+  }
+  let lockState = '未操作';
+  async function autoCamera() {
+    if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const c = {};
+    if (caps.exposureMode && caps.exposureMode.includes('continuous')) c.exposureMode = 'continuous';
+    if (caps.focusMode && caps.focusMode.includes('continuous')) c.focusMode = 'continuous';
+    if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes('continuous')) c.whiteBalanceMode = 'continuous';
+    try { await track.applyConstraints({ advanced: [c] }); lockState = '自動'; $('lockMsg').textContent = '自動に戻しました。'; }
+    catch (e) { $('lockMsg').textContent = '自動に戻せませんでした。カメラを再開始してください。'; }
+    showSettings();
+  }
+
+  $('camBtn').addEventListener('click', startCamera);
+  $('lockBtn').addEventListener('click', lockCamera);
+  $('autoBtn').addEventListener('click', autoCamera);
+  $('resSel').addEventListener('change', () => { if (!recording) { resize(); showSettings(); saveState(); } });
+  $('camSel').addEventListener('change', () => { saveState(); if (stream && !recording) startCamera(); });
+  $('chartCh').addEventListener('change', saveState);
+  $('durSel').addEventListener('change', saveState);
+
+  // ---------- フレーム処理 ----------
+  let loopRunning = false;
+  const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+  function startLoop() {
+    if (loopRunning) return; loopRunning = true;
+    if (hasRVFC) video.requestVideoFrameCallback(onVideoFrame);
+    else requestAnimationFrame(onAnimFrame);
+  }
+  function onVideoFrame(now, meta) {
+    processFrame(meta);
+    if (stream) video.requestVideoFrameCallback(onVideoFrame); else loopRunning = false;
+  }
+  let lastMediaTime = -1;
+  function onAnimFrame() {
+    if (video.currentTime !== lastMediaTime) { lastMediaTime = video.currentTime; processFrame(null); }
+    if (stream) requestAnimationFrame(onAnimFrame); else loopRunning = false;
+  }
+
+  function processFrame(meta) {
+    if (!video.videoWidth) return;
+    const tNow = performance.now();
+    const tFrame = meta && meta.captureTime ? meta.captureTime
+                 : meta && meta.expectedDisplayTime ? meta.expectedDisplayTime : tNow;
+    const presented = meta ? meta.presentedFrames : null;
+    if (presented != null && prevPresented != null && presented - prevPresented > 1) droppedTotal += presented - prevPresented - 1;
+    prevPresented = presented;
+
+    ctx.drawImage(video, 0, 0, W, H);
+    if (masksDirty) buildMasks();
+    const data = ctx.getImageData(0, 0, W, H).data;
+
+    const vals = new Map();
+    for (const r of rois) {
+      const m = masks.get(r.id); if (!m || m.length === 0) continue;
+      let sr = 0, sg = 0, sb = 0, sat = 0;
+      for (let i = 0; i < m.length; i++) {
+        const o = m[i], R = data[o], G = data[o + 1], B = data[o + 2];
+        sr += R; sg += G; sb += B;
+        if (R >= SAT_LEVEL || G >= SAT_LEVEL || B >= SAT_LEVEL) sat++;
+      }
+      const n = m.length;
+      vals.set(r.id, [sr / n, sg / n, sb / n, sat / n]);
+    }
+    lastVals = vals;
+
+    // 記録
+    if (recording) {
+      if (recRows.length === 0) recT0 = tFrame;
+      const row = [recRows.length, (tFrame - recT0).toFixed(2), meta && meta.mediaTime != null ? meta.mediaTime.toFixed(4) : '',
+        presented != null ? presented : '', (tNow - recT0).toFixed(2)];
+      for (const r of recMeta.rois) {
+        const v = vals.get(r.id) || [NaN, NaN, NaN, NaN];
+        row.push(v[0].toFixed(3), v[1].toFixed(3), v[2].toFixed(3), v[3].toFixed(4));
+      }
+      recRows.push(row);
+      if (recDur > 0 && (tFrame - recT0) / 1000 >= recDur) stopRecording();
+    }
+
+    // 表示用の履歴
+    hist.push({ t: tFrame, vals });
+    while (hist.length && tFrame - hist[0].t > CHART_SEC * 1000) hist.shift();
+    frameTimes.push(tFrame);
+    while (frameTimes.length > 60) frameTimes.shift();
+    frameCount++;
+
+    drawOverlay();
+    if (frameCount % 3 === 0) { drawChart(); updateTable(); updateFps(); }
+  }
+
+  function drawOverlay() {
+    const lw = Math.max(1.5, W / 320);
+    ctx.font = `${Math.round(W / 32)}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    for (const r of rois) {
+      const cx = r.x * W, cy = r.y * H, rad = r.r * W;
+      ctx.lineWidth = r === selected ? lw * 2.5 : lw;
+      ctx.strokeStyle = roiColor(r);
+      ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = roiColor(r);
+      ctx.fillText(r.label, cx, cy - rad - lw * 2);
+    }
+    if (recording) {
+      ctx.fillStyle = '#ff5a5a';
+      ctx.beginPath(); ctx.arc(W - W / 30, W / 30, W / 70, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  function drawChart() {
+    const dpr = window.devicePixelRatio || 1;
+    const cw = chart.clientWidth, ch = chart.clientHeight;
+    if (chart.width !== Math.round(cw * dpr)) { chart.width = Math.round(cw * dpr); chart.height = Math.round(ch * dpr); }
+    cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cctx.clearRect(0, 0, cw, ch);
+    if (hist.length < 2) return;
+    const c = Number($('chartCh').value);
+    let lo = Infinity, hi = -Infinity;
+    for (const h of hist) for (const v of h.vals.values()) { lo = Math.min(lo, v[c]); hi = Math.max(hi, v[c]); }
+    if (!Number.isFinite(lo)) return;
+    if (hi - lo < 2) { const m = (hi + lo) / 2; lo = m - 1; hi = m + 1; }
+    const pad = 6, t1 = hist[hist.length - 1].t, t0 = t1 - CHART_SEC * 1000;
+    const X = t => pad + (t - t0) / (t1 - t0) * (cw - 2 * pad);
+    const Y = v => ch - pad - (v - lo) / (hi - lo) * (ch - 2 * pad);
+    cctx.strokeStyle = '#2a2f37'; cctx.lineWidth = 1;
+    for (let s = 0; s <= CHART_SEC; s += 5) { const x = X(t1 - s * 1000); cctx.beginPath(); cctx.moveTo(x, 0); cctx.lineTo(x, ch); cctx.stroke(); }
+    for (const r of rois) {
+      cctx.strokeStyle = roiColor(r); cctx.lineWidth = r === selected ? 2.5 : 1.5;
+      cctx.beginPath(); let started = false;
+      for (const h of hist) {
+        const v = h.vals.get(r.id); if (!v) continue;
+        const x = X(h.t), y = Y(v[c]);
+        if (!started) { cctx.moveTo(x, y); started = true; } else cctx.lineTo(x, y);
+      }
+      cctx.stroke();
+    }
+    cctx.fillStyle = '#9aa1ab'; cctx.font = '11px system-ui, sans-serif'; cctx.textAlign = 'left';
+    cctx.fillText(hi.toFixed(1), 4, 12); cctx.fillText(lo.toFixed(1), 4, ch - 4);
+  }
+
+  function buildTable() {
+    const tb = $('table').querySelector('tbody');
+    tb.innerHTML = rois.map(r => `<tr data-id="${r.id}"><td><span class="sw" style="background:${roiColor(r)}"></span>${r.label}（${ROLE[r.role].name}）</td><td></td><td></td><td></td><td></td></tr>`).join('');
+  }
+  function updateTable() {
+    const warnings = [];
+    for (const tr of $('table').querySelectorAll('tbody tr')) {
+      const r = rois.find(x => x.id === tr.dataset.id); const v = r && lastVals.get(r.id);
+      const tds = tr.children;
+      if (!v) { for (let i = 1; i < 5; i++) tds[i].textContent = '—'; continue; }
+      tds[1].textContent = v[0].toFixed(1); tds[2].textContent = v[1].toFixed(1); tds[3].textContent = v[2].toFixed(1);
+      tds[4].textContent = (v[3] * 100).toFixed(1) + '%';
+      tds[4].className = v[3] > SAT_WARN ? 'bad' : '';
+      if (v[3] > SAT_WARN) warnings.push(r.label + ' が白飛びしています。光源ページの「表示の明るさ」を下げてください（端末の画面の明るさは下げない）。');
+      else if (Math.max(v[0], v[1], v[2]) < DARK_LEVEL) warnings.push(r.label + ' が暗すぎます。');
+    }
+    if (!rois.length && stream) setMsg('「枠を追加」で測定領域を置いてください。', 'warn');
+    else if (warnings.length) setMsg(warnings[0], 'bad');
+    else if (stream) setMsg(dropNote(), droppedTotal ? 'warn' : 'ok');
+  }
+  function dropNote() {
+    if (!hasRVFC) return 'このブラウザはフレームごとの時刻が取れないため、時刻は描画のタイミングで記録します。';
+    return droppedTotal ? `処理が追いつかず、これまでに ${droppedTotal} コマ取りこぼしました（処理幅を下げると減ります）。` : '取りこぼしなし。';
+  }
+  function updateFps() {
+    if (frameTimes.length < 2) return;
+    const dt = (frameTimes[frameTimes.length - 1] - frameTimes[0]) / (frameTimes.length - 1);
+    $('fps').textContent = dt > 0 ? (1000 / dt).toFixed(1) + ' fps' : '—';
+  }
+  function setMsg(t, cls) { const m = $('msg'); m.textContent = t; m.className = cls || ''; }
+
+  // ---------- 記録 ----------
+  async function startRecording() {
+    if (!stream) return;
+    if (!rois.length) { setMsg('枠を1つ以上置いてから記録してください。', 'bad'); return; }
+    if (masksDirty) buildMasks();
+    recRows = []; recording = true; saved = false; recDur = Number($('durSel').value);
+    droppedTotal = 0; prevPresented = null;
+    recMeta = {
+      start: new Date(),
+      rois: rois.map(r => ({ id: r.id, label: r.label, role: r.role, x: +r.x.toFixed(4), y: +r.y.toFixed(4), r: +r.r.toFixed(4),
+        pixels: (masks.get(r.id) || []).length })),
+      settings: track && track.getSettings ? track.getSettings() : {},
+      video: video.videoWidth + 'x' + video.videoHeight, proc: W + 'x' + H, lock: lockState,
+      note: $('note').value, rvfc: hasRVFC,
+    };
+    $('recBtn').textContent = '記録停止'; $('recBtn').classList.add('primary');
+    $('csvBtn').disabled = true;
+    ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius'].forEach(id => $(id).disabled = true);
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    recTimer = setInterval(() => {
+      const sec = recRows.length > 1 ? (Number(recRows[recRows.length - 1][1]) / 1000) : 0;
+      $('recStat').textContent = `記録中　${sec.toFixed(1)} 秒　${recRows.length} コマ`;
+    }, 250);
+  }
+  function stopRecording() {
+    if (!recording) return;
+    recording = false; clearInterval(recTimer);
+    recMeta.dropped = droppedTotal;
+    $('recBtn').textContent = '記録開始'; $('recBtn').classList.remove('primary');
+    ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius'].forEach(id => $(id).disabled = false);
+    $('csvBtn').disabled = recRows.length === 0; $('pngBtn').disabled = false;
+    const sec = recRows.length > 1 ? Number(recRows[recRows.length - 1][1]) / 1000 : 0;
+    const fps = sec > 0 ? (recRows.length - 1) / sec : 0;
+    $('recStat').textContent = `記録終了　${sec.toFixed(1)} 秒　${recRows.length} コマ（平均 ${fps.toFixed(1)} fps、取りこぼし ${droppedTotal} コマ）`;
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+  $('recBtn').addEventListener('click', () => recording ? stopRecording() : startRecording());
+
+  function stamp(d) {
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  }
+  function download(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  function buildCsv() {
+    const m = recMeta;
+    const head = [
+      '# polarization-lab verification kit record v1',
+      '# start: ' + m.start.toISOString(),
+      '# note: ' + (m.note || '').replace(/[\r\n]+/g, ' '),
+      '# user_agent: ' + navigator.userAgent,
+      '# video: ' + m.video + ' / processing: ' + m.proc,
+      '# frame_time: ' + (m.rvfc ? 'requestVideoFrameCallback (captureTime or expectedDisplayTime)' : 'requestAnimationFrame'),
+      '# camera_lock: ' + m.lock,
+      '# track_settings: ' + JSON.stringify(m.settings),
+      '# dropped_frames: ' + (m.dropped || 0),
+      '# rois: ' + JSON.stringify(m.rois.map(({ id, ...r }) => r)),
+      '# values: mean of pixel values 0-255 inside each circle, no gamma correction, no ratio. *_sat = fraction of pixels with any channel >= ' + SAT_LEVEL,
+    ];
+    const cols = ['frame', 't_ms', 'media_time', 'presented_frames', 'proc_ms'];
+    for (const r of m.rois) cols.push(r.label + '_R', r.label + '_G', r.label + '_B', r.label + '_sat');
+    return '﻿' + head.join('\n') + '\n' + cols.join(',') + '\n' + recRows.map(r => r.join(',')).join('\n') + '\n';
+  }
+  $('csvBtn').addEventListener('click', () => {
+    if (!recRows.length) return;
+    download(new Blob([buildCsv()], { type: 'text/csv' }), `pol_${stamp(recMeta.start)}.csv`);
+    saved = true;
+  });
+  $('pngBtn').addEventListener('click', () => {
+    view.toBlob(b => b && download(b, `pol_${stamp(recMeta ? recMeta.start : new Date())}.png`), 'image/png');
+  });
+
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && recording && !wakeLock && 'wakeLock' in navigator) {
+      try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    }
+  });
+  window.addEventListener('beforeunload', e => { if (recording || (recRows.length && !saved)) { e.preventDefault(); e.returnValue = ''; } });
+
+  // ---------- 起動 ----------
+  loadState(); relabel(); buildTable();
+  if (!rois.length) setMsg('「カメラを開始」を押してください。');
+  else setMsg('前回の枠を読み込みました。「カメラを開始」を押してください。');
+})();
+</script>
+</body>
+</html>
