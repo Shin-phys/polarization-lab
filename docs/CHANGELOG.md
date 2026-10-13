@@ -1,5 +1,11 @@
 # 改訂履歴：偏光ラボ
 
+## 0.6（2026-10-13）
+
+- 回転台の回転速度とむらを実測して追記した（POL-Q-03 途中経過、`02-apparatus.md` 3節、`07-verification-kit.md` 5.1節）。
+- 回転台の記録を解析する `tools/turntable.py` を追加した。
+- `tools/analyze.py` の回転むらの指標を、90° ごとの所要時間と等速回転からのずれに改めた（1回転に1回のむらを見落としていたため）。
+
 ## 0.5（2026-10-12）
 
 - 検証キットを作った：光源ページ（`kit/light.html`、POL-F-60〜65）、記録ページ（`kit/record.html`、POL-F-41 ほか）、解析スクリプト（`tools/analyze.py`）。使い方は `07-verification-kit.md`。

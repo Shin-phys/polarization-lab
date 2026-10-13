@@ -125,11 +125,29 @@ def signed_area(x, y):
     return 0.5 * float(np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]))
 
 
-def zero_crossings(t, y):
+def zero_crossings(t, y, min_gap=0.0):
+    """上向き・下向きの両方のゼロ交差の時刻。cos² の波形では、回転角 90° ごとに1つ現れる。
+    雑音で交差が続けて出たときは、min_gap 秒以内のものをまとめる。"""
     s = np.sign(y)
-    idx = np.where((s[:-1] < 0) & (s[1:] >= 0))[0]
-    # 線形補間で時刻を出す
-    return np.array([t[i] - y[i] * (t[i + 1] - t[i]) / (y[i + 1] - y[i]) for i in idx])
+    idx = np.where(s[:-1] * s[1:] < 0)[0]
+    tz = [t[i] - y[i] * (t[i + 1] - t[i]) / (y[i + 1] - y[i]) for i in idx]
+    out = []
+    for x in tz:
+        if out and x - out[-1][-1] < min_gap:
+            out[-1].append(x)
+        else:
+            out.append([x])
+    # まとめた組のうち、向きが打ち消し合う偶数個の組は捨て、残りは中央の時刻を使う
+    return np.array([float(np.median(g)) for g in out if len(g) % 2 == 1])
+
+
+def rotation_report(tz):
+    """90° ごとの通過時刻から、回転むらの指標を出す。"""
+    q = np.diff(tz)                                   # 90° ごとの所要時間
+    ang = 90.0 * np.arange(len(tz))
+    c = np.polyfit(tz, ang, 1)
+    dev = ang - np.polyval(c, tz)                     # 等速回転からのずれ（度）
+    return q, float(np.max(np.abs(dev))), 360.0 / c[0]
 
 
 # ---------------------------------------------------------------- 解析
@@ -177,14 +195,15 @@ def analyze(meta, cols, labels, ch="G", base=None, ref=None, out=print):
     t = t_all[sel]
     out(f"  回転の周期 {2 / f:.2f} 秒（cos² の周期 {1 / f:.2f} 秒）、使った範囲 {n_use / 2:.0f} 回転 = {t[-1] - t[0]:.1f} 秒")
 
-    # 回転むら（ゼロ交差の間隔）
-    fb = fit(t, raw[base][sel], f)
-    zc = zero_crossings(t, raw[base][sel] - fb["model_slow"])
-    if len(zc) >= 3:
-        per = np.diff(zc)
-        rot = per[:-1] + per[1:]
-        out(f"  回転むら：cos² の1周期ごとの長さ 平均 {per.mean():.2f} 秒、ばらつき {per.std() / per.mean() * 100:.1f}%"
-            f"（最短 {per.min():.2f}、最長 {per.max():.2f}）。1回転ごと {rot.mean():.2f} ± {rot.std():.2f} 秒")
+    # 回転むら（90° ごとの通過時刻）
+    # 画素値の非線形のままだと交差の間隔がそろわないので、ガンマ 2.2 で戻してから交差を探す
+    lin = np.clip(raw[base][sel] / 255.0, 1e-6, None) ** 2.2
+    lo, hi = np.percentile(lin, [2, 98])
+    zc = zero_crossings(t, lin - (lo + hi) / 2, min_gap=0.15 / f)
+    if len(zc) >= 4:
+        q, dev, per = rotation_report(zc)
+        out(f"  回転むら：90° ごとの所要時間 {q.min():.2f}〜{q.max():.2f} 秒（最長÷最短 {q.max() / q.min():.2f}）、"
+            f"等速回転からのずれ 最大 {dev:.1f}°")
 
     def series(lab, gamma, use_ratio):
         v = raw[lab][sel].astype(float)
