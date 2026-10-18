@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<title>旋光を測る｜偏光ラボ</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1e2127; --line: #343943; --text: #eceef1; --muted: #9aa1ab;
+    --accent: #4da3ff; --warn: #ffb020; --bad: #ff5a5a; --ok: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 15px; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 17px; margin: 0; }
+  header a { color: var(--accent); font-size: 13px; margin-left: auto; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px 16px 48px;
+    grid-template-areas: "view" "controls" "data"; }
+  main > * { min-width: 0; }
+  #viewCard { grid-area: view; position: sticky; top: 0; z-index: 2; box-shadow: 0 6px 12px var(--bg); }
+  #controls { grid-area: controls; }
+  #data { grid-area: data; }
+  @media (min-width: 960px) {
+    main { grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr); align-items: start;
+      grid-template-areas: "view controls" "data controls"; }
+    #viewCard { position: static; box-shadow: none; }
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .card h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+  #view { width: auto; max-width: 100%; height: auto; max-height: 34vh; display: block; margin: 0 auto; background: #000; border-radius: 8px; touch-action: none; }
+  @media (min-width: 960px) { #view { max-height: none; width: 100%; } }
+  video { display: none; }
+  canvas.plot { width: 100%; display: block; background: #0d0f12; border-radius: 8px; }
+  #wave { height: 150px; }
+  .plots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  @media (min-width: 560px) { .plots { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); } }
+  #liss { aspect-ratio: 1 / 1; height: auto; max-width: 340px; margin: 0 auto; }
+  #conc { height: 220px; }
+  button, select, input[type=text], input[type=number] {
+    font: inherit; color: var(--text); background: #2a2e35; border: 1px solid #3c424c; border-radius: 10px;
+    padding: 10px 12px; min-height: 46px; max-width: 100%; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.rec { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+  button.small { min-height: 34px; padding: 4px 10px; font-size: 13px; }
+  button:disabled { opacity: .45; }
+  input[type=number] { width: 7em; }
+  input[type=range] { width: 100%; height: 34px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  .row > * { flex: 1 1 auto; min-width: 0; }
+  .row > .fix { flex: 0 0 auto; }
+  .grow { flex: 3 1 160px; }
+  .hint { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 6px 0; }
+  .stat { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  th:first-child, td:first-child { text-align: left; }
+  td.note { text-align: left; font-size: 12px; color: var(--warn); }
+  .tablewrap { overflow-x: auto; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .big { font-size: 18px; font-weight: 600; }
+  .warn { color: var(--warn); } .bad { color: var(--bad); } .ok { color: var(--ok); }
+  #msg { min-height: 1.3em; font-size: 13px; margin: 8px 0 0; line-height: 1.45; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  label.chk { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  label.chk input { width: 20px; height: 20px; }
+  .pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #2a2e35; color: var(--muted); }
+  pre.settings { font-size: 11px; color: var(--muted); white-space: pre-wrap; word-break: break-all; margin: 6px 0 0; max-height: 140px; overflow: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>旋光を測る</h1>
+  <span class="stat" id="fps">—</span>
+  <a href="../index.html">入口へ</a>
+</header>
+
+<main>
+  <div class="card" id="viewCard">
+    <canvas id="view" width="640" height="480"></canvas>
+    <video id="video" playsinline muted autoplay></video>
+    <p id="msg"></p>
+  </div>
+
+  <section id="controls">
+    <div class="card">
+      <h2>1. カメラ</h2>
+      <div class="row">
+        <select id="camSel" class="grow"><option value="">背面カメラ（既定）</option></select>
+        <select id="resSel" class="fix">
+          <option value="480">処理幅 480</option>
+          <option value="640" selected>処理幅 640</option>
+          <option value="960">処理幅 960</option>
+        </select>
+      </div>
+      <div class="row"><button class="primary" id="camBtn">カメラを開始</button></div>
+      <div class="row">
+        <button id="lockBtn" disabled>露出・ピント・色を固定</button>
+        <button id="autoBtn" disabled>自動に戻す</button>
+      </div>
+      <p class="hint" id="lockMsg">固定できるかは端末によります。固定できなくても測れます。</p>
+    </div>
+
+    <div class="card">
+      <h2>2. 枠を置く</h2>
+      <div class="row">
+        <select id="roleSel" class="grow">
+          <option value="ref">基準（紙）</option>
+          <option value="blank">ブランク（水）</option>
+          <option value="sample">試料</option>
+        </select>
+        <button id="addBtn" class="fix">枠を追加</button>
+      </div>
+      <p class="hint">枠は映像の上でドラッグして動かせます。ブランクと試料の枠は穴より一回り小さく、基準の枠は黒い底から離れた白い紙の上に置きます。</p>
+      <div class="row">
+        <span class="stat fix">大きさ</span>
+        <input type="range" id="radius" min="0.005" max="0.2" step="0.001" value="0.03" class="grow">
+        <button id="delBtn" class="fix">枠を削除</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. 測る</h2>
+      <div class="row">
+        <input type="text" id="note" placeholder="メモ（例：全部水、s1=0.3 g/mL）">
+      </div>
+      <div class="row">
+        <button class="rec" id="recBtn" disabled>測定開始</button>
+      </div>
+      <p class="stat" id="recStat">回転台を回してから、測定開始を押します。2回転で自動的に止まります。</p>
+      <details>
+        <summary>詳細設定</summary>
+        <div class="row">
+          <span class="stat fix">ガンマ</span>
+          <input type="number" id="gamma" min="1" max="3" step="0.1" value="2.2" class="fix">
+          <span class="stat fix">最長</span>
+          <select id="maxSec" class="fix">
+            <option value="60">60秒</option><option value="120" selected>120秒</option><option value="240">240秒</option>
+          </select>
+        </div>
+        <label class="chk"><input type="checkbox" id="useRatio" checked> 基準の枠との比を取る</label>
+        <label class="chk"><input type="checkbox" id="signFlip"> 符号を反転する（ショ糖でマイナスと出たときに使う）</label>
+        <div class="row">
+          <span class="stat fix">波形の色</span>
+          <select id="waveCh" class="fix"><option value="0">R</option><option value="1" selected>G</option><option value="2">B</option></select>
+        </div>
+        <details><summary>カメラの設定値</summary><pre class="settings" id="settings">—</pre></details>
+      </details>
+    </div>
+  </section>
+
+  <section id="data">
+    <div class="card">
+      <h2>明るさの変化</h2>
+      <div class="plots">
+        <canvas class="plot" id="wave"></canvas>
+        <canvas class="plot" id="liss"></canvas>
+      </div>
+      <p class="hint" id="plotNote">左：各枠の明るさ（振れ幅でそろえたもの）。右：横がブランク、縦が試料。</p>
+    </div>
+
+    <div class="card">
+      <h2>4. 結果</h2>
+      <div id="result"><p class="hint">まだ測っていません。</p></div>
+      <div class="row" id="zeroRow">
+        <button id="zeroBtn" disabled>この結果をゼロ点にする</button>
+        <button id="zeroClearBtn">ゼロ点を消す</button>
+      </div>
+      <p class="hint" id="zeroStat">ゼロ点：なし</p>
+      <div class="row">
+        <button id="addHistBtn" class="primary" disabled>記録一覧に加える</button>
+      </div>
+      <div class="row">
+        <button id="rawCsvBtn" disabled>生データをCSVで保存</button>
+        <button id="pngBtn" disabled>図を保存</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>5. 記録一覧と濃度のグラフ</h2>
+      <div class="tablewrap"><table id="hist"></table></div>
+      <div class="row">
+        <span class="stat fix">液の深さ</span>
+        <input type="number" id="depth" min="0" step="0.1" placeholder="cm" class="fix">
+        <span class="stat fix">cm</span>
+        <label class="chk fix"><input type="checkbox" id="fitLine"> 原点を通る直線を引く</label>
+      </div>
+      <canvas class="plot" id="conc"></canvas>
+      <div id="slopes" class="hint"></div>
+      <div class="row">
+        <button id="histCsvBtn">記録一覧をCSVで保存</button>
+        <button id="histClearBtn">記録一覧を消す</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="pol-analysis.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const A = window.PolAnalysis;
+  const video = $('video'), view = $('view'), ctx = view.getContext('2d', { willReadFrequently: true });
+
+  const ROLE = {
+    ref:    { name: '基準',    prefix: 'ref',   color: '#ffffff' },
+    blank:  { name: 'ブランク', prefix: 'blank', color: '#4da3ff' },
+    sample: { name: '試料',    prefix: 's',     color: '#3ecf8e' },
+  };
+  const SAMPLE_COLORS = ['#3ecf8e', '#ff6ec7', '#b98cff', '#ff8a4d', '#9be15d', '#5ee0e6'];
+  const CH_COLORS = { R: '#ff6b6b', G: '#3ecf8e', B: '#5aa9ff' };
+  const SAT_LEVEL = 250, SAT_WARN = 0.01, DARK_LEVEL = 10, PREVIEW_SEC = 15, TARGET_CYCLES = 4.15;
+  const STORE = 'pol-rotation-v1';
+
+  let stream = null, track = null, W = 640, H = 480;
+  let rois = [], selected = null, masks = new Map(), masksDirty = true, lastVals = new Map();
+  const preview = [];
+  const frameTimes = [];
+  let frameCount = 0, prevPresented = null, droppedTotal = 0, lockState = '未操作';
+  let rec = null;            // 記録中・記録後のデータ
+  let recording = false, recTimer = null, checkTimer = null, wakeLock = null;
+  let lastResult = null, lastRaw = null;
+  let zero = null, history = [], runNo = 0;
+
+  // ---------- 保存 ----------
+  function save() {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({
+        rois, zero, history, runNo,
+        res: $('resSel').value, cam: $('camSel').value, gamma: $('gamma').value, maxSec: $('maxSec').value,
+        useRatio: $('useRatio').checked, signFlip: $('signFlip').checked, waveCh: $('waveCh').value,
+        depth: $('depth').value, fitLine: $('fitLine').checked,
+      }));
+    } catch (e) {}
+  }
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE) || '{}');
+      if (Array.isArray(s.rois)) rois = s.rois.filter(r => ROLE[r.role] && [r.x, r.y, r.r].every(Number.isFinite));
+      if (s.zero && s.zero.alpha) zero = s.zero;
+      if (Array.isArray(s.history)) history = s.history;
+      runNo = s.runNo || 0;
+      if (s.res) $('resSel').value = s.res;
+      if (s.gamma) $('gamma').value = s.gamma;
+      if (s.maxSec) $('maxSec').value = s.maxSec;
+      if (typeof s.useRatio === 'boolean') $('useRatio').checked = s.useRatio;
+      if (typeof s.signFlip === 'boolean') $('signFlip').checked = s.signFlip;
+      if (s.waveCh) $('waveCh').value = s.waveCh;
+      if (s.depth) $('depth').value = s.depth;
+      if (typeof s.fitLine === 'boolean') $('fitLine').checked = s.fitLine;
+      return s;
+    } catch (e) { return {}; }
+  }
+
+  // ---------- 枠 ----------
+  function relabel() {
+    const count = {};
+    for (const r of rois) { count[r.role] = (count[r.role] || 0) + 1; r.label = ROLE[r.role].prefix + count[r.role]; }
+  }
+  function roiColor(r) {
+    if (r.role !== 'sample') return ROLE[r.role].color;
+    return SAMPLE_COLORS[(parseInt(r.label.slice(1), 10) - 1) % SAMPLE_COLORS.length];
+  }
+  function addRoi(role) {
+    if (role === 'blank' && rois.some(r => r.role === 'blank')) { setMsg('ブランクの枠は1つだけ置けます。', 'warn'); return; }
+    if (role === 'ref' && rois.some(r => r.role === 'ref')) { setMsg('基準の枠は1つだけ置けます。', 'warn'); return; }
+    const rad = Number($('radius').value);
+    let pos = { x: 0.5, y: 0.5 };
+    const free = q => rois.every(o => Math.hypot((q.x - o.x) * W, (q.y - o.y) * H) > (o.r + rad) * W);
+    search: for (let ring = 0; ring < 8; ring++) {
+      const n = ring === 0 ? 1 : ring * 6;
+      for (let k = 0; k < n; k++) {
+        const a = 2 * Math.PI * k / n, d = ring * 2.2 * rad;
+        const q = { x: 0.5 + d * Math.cos(a), y: 0.5 + d * Math.sin(a) * W / H };
+        if (q.x > 0 && q.x < 1 && q.y > 0 && q.y < 1 && free(q)) { pos = q; break search; }
+      }
+    }
+    const r = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), role, label: '', x: pos.x, y: pos.y, r: rad };
+    rois.push(r); relabel(); selected = r; masksDirty = true; syncRadius(); save();
+  }
+  function deleteSelected() {
+    if (!selected) return;
+    rois = rois.filter(r => r !== selected); selected = null; relabel(); masksDirty = true; save();
+  }
+  function syncRadius() { if (selected) $('radius').value = selected.r; }
+  function buildMasks() {
+    masks = new Map();
+    for (const r of rois) {
+      const cx = r.x * W, cy = r.y * H, rad = r.r * W, rad2 = rad * rad;
+      const x0 = Math.max(0, Math.floor(cx - rad)), x1 = Math.min(W - 1, Math.ceil(cx + rad));
+      const y0 = Math.max(0, Math.floor(cy - rad)), y1 = Math.min(H - 1, Math.ceil(cy + rad));
+      const list = [];
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+        if (dx * dx + dy * dy <= rad2) list.push((y * W + x) * 4);
+      }
+      masks.set(r.id, Int32Array.from(list));
+    }
+    masksDirty = false;
+  }
+  let drag = null;
+  const canvasPoint = ev => { const b = view.getBoundingClientRect(); return { x: (ev.clientX - b.left) / b.width, y: (ev.clientY - b.top) / b.height }; };
+  view.addEventListener('pointerdown', ev => {
+    const p = canvasPoint(ev);
+    const hit = r => Math.hypot((p.x - r.x) * W, (p.y - r.y) * H) <= Math.max(r.r * W, 24 * W / view.getBoundingClientRect().width);
+    let best = selected && hit(selected) ? selected : null;
+    if (!best) for (let i = rois.length - 1; i >= 0; i--) if (hit(rois[i])) { best = rois[i]; break; }
+    selected = best; syncRadius();
+    if (best && !recording) { drag = { r: best, dx: p.x - best.x, dy: p.y - best.y, id: ev.pointerId }; view.setPointerCapture(ev.pointerId); }
+  });
+  view.addEventListener('pointermove', ev => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const p = canvasPoint(ev);
+    drag.r.x = Math.min(1, Math.max(0, p.x - drag.dx)); drag.r.y = Math.min(1, Math.max(0, p.y - drag.dy)); masksDirty = true;
+  });
+  const endDrag = () => { if (drag) { drag = null; save(); } };
+  view.addEventListener('pointerup', endDrag);
+  view.addEventListener('pointercancel', endDrag);
+  $('radius').addEventListener('input', () => { if (selected && !recording) { selected.r = Number($('radius').value); masksDirty = true; save(); } });
+  $('addBtn').addEventListener('click', () => { if (!recording) addRoi($('roleSel').value); });
+  $('delBtn').addEventListener('click', () => { if (!recording) deleteSelected(); });
+
+  // ---------- カメラ ----------
+  async function listCameras() {
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const sel = $('camSel'), cur = sel.value;
+      sel.innerHTML = '<option value="">背面カメラ（既定）</option>' +
+        devs.map((d, i) => `<option value="${d.deviceId}">${(d.label || 'カメラ ' + (i + 1)).replace(/</g, '&lt;')}</option>`).join('');
+      if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+    } catch (e) {}
+  }
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMsg('このブラウザではカメラを使えません。HTTPS のページで開いているか確認してください。', 'bad'); return;
+    }
+    stopCamera();
+    const camId = $('camSel').value;
+    const v = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+    if (camId) v.deviceId = { exact: camId }; else v.facingMode = { ideal: 'environment' };
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: v, audio: false }); }
+    catch (e) { setMsg('カメラを開始できませんでした（' + e.name + '）。', 'bad'); return; }
+    track = stream.getVideoTracks()[0];
+    video.srcObject = stream;
+    await video.play().catch(() => {});
+    await new Promise(res => { if (video.videoWidth) res(); else video.onloadedmetadata = () => res(); });
+    resize(); await listCameras(); if (camId) $('camSel').value = camId;
+    $('lockBtn').disabled = false; $('autoBtn').disabled = false; $('recBtn').disabled = false;
+    $('camBtn').textContent = 'カメラを再開始';
+    showSettings(); save(); setMsg(''); startLoop();
+  }
+  function stopCamera() { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; track = null; }
+  function resize() {
+    const vw = video.videoWidth || 640, vh = video.videoHeight || 480, scale = Math.min(1, Number($('resSel').value) / vw);
+    W = Math.round(vw * scale); H = Math.round(vh * scale); view.width = W; view.height = H; masksDirty = true;
+  }
+  function showSettings() {
+    if (!track) return;
+    const s = track.getSettings ? track.getSettings() : {};
+    const keep = ['width', 'height', 'frameRate', 'facingMode', 'exposureMode', 'exposureTime', 'iso', 'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature', 'zoom'];
+    const o = {}; for (const k of keep) if (k in s) o[k] = s[k];
+    $('settings').textContent = JSON.stringify(o, null, 1) + '\n処理: ' + W + '×' + H;
+  }
+  async function lockCamera() {
+    if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {}, s = track.getSettings ? track.getSettings() : {};
+    const result = [];
+    const tryApply = async (name, c) => { try { await track.applyConstraints({ advanced: [c] }); result.push(name + '○'); } catch (e) { result.push(name + '×'); } };
+    if (caps.exposureMode && caps.exposureMode.includes('manual')) { const c = { exposureMode: 'manual' }; if (s.exposureTime) c.exposureTime = s.exposureTime; await tryApply('露出', c); } else result.push('露出：非対応');
+    if (caps.focusMode && caps.focusMode.includes('manual')) { const c = { focusMode: 'manual' }; if (s.focusDistance !== undefined) c.focusDistance = s.focusDistance; await tryApply('ピント', c); }
+    else if (caps.focusMode && caps.focusMode.includes('single-shot')) await tryApply('ピント', { focusMode: 'single-shot' }); else result.push('ピント：非対応');
+    if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes('manual')) { const c = { whiteBalanceMode: 'manual' }; if (s.colorTemperature) c.colorTemperature = s.colorTemperature; await tryApply('色', c); } else result.push('色：非対応');
+    lockState = result.join('、'); $('lockMsg').textContent = '固定の結果：' + lockState; showSettings();
+  }
+  async function autoCamera() {
+    if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {}, c = {};
+    for (const k of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if (caps[k] && caps[k].includes('continuous')) c[k] = 'continuous';
+    try { await track.applyConstraints({ advanced: [c] }); lockState = '自動'; $('lockMsg').textContent = '自動に戻しました。'; }
+    catch (e) { $('lockMsg').textContent = '自動に戻せませんでした。カメラを再開始してください。'; }
+    showSettings();
+  }
+  $('camBtn').addEventListener('click', startCamera);
+  $('lockBtn').addEventListener('click', lockCamera);
+  $('autoBtn').addEventListener('click', autoCamera);
+  $('resSel').addEventListener('change', () => { if (!recording) { resize(); showSettings(); save(); } });
+  $('camSel').addEventListener('change', () => { save(); if (stream && !recording) startCamera(); });
+  for (const id of ['gamma', 'maxSec', 'waveCh']) $(id).addEventListener('change', save);
+  for (const id of ['useRatio', 'signFlip', 'gamma']) $(id).addEventListener('change', () => { save(); if (lastRaw && !recording) { analyzeLast(); } renderHistory(); });
+
+  // ---------- フレーム処理 ----------
+  let loopRunning = false;
+  const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+  function startLoop() { if (loopRunning) return; loopRunning = true; if (hasRVFC) video.requestVideoFrameCallback(onVideoFrame); else requestAnimationFrame(onAnimFrame); }
+  function onVideoFrame(now, meta) { processFrame(meta); if (stream) video.requestVideoFrameCallback(onVideoFrame); else loopRunning = false; }
+  let lastMediaTime = -1;
+  function onAnimFrame() { if (video.currentTime !== lastMediaTime) { lastMediaTime = video.currentTime; processFrame(null); } if (stream) requestAnimationFrame(onAnimFrame); else loopRunning = false; }
+
+  function processFrame(meta) {
+    if (!video.videoWidth) return;
+    const tNow = performance.now();
+    const tFrame = meta && meta.captureTime ? meta.captureTime : meta && meta.expectedDisplayTime ? meta.expectedDisplayTime : tNow;
+    const presented = meta ? meta.presentedFrames : null;
+    if (presented != null && prevPresented != null && presented - prevPresented > 1) droppedTotal += presented - prevPresented - 1;
+    prevPresented = presented;
+    ctx.drawImage(video, 0, 0, W, H);
+    if (masksDirty) buildMasks();
+    const data = ctx.getImageData(0, 0, W, H).data;
+    const vals = new Map();
+    for (const r of rois) {
+      const m = masks.get(r.id); if (!m || !m.length) continue;
+      let sr = 0, sg = 0, sb = 0, sat = 0;
+      for (let i = 0; i < m.length; i++) {
+        const o = m[i], R = data[o], G = data[o + 1], B = data[o + 2];
+        sr += R; sg += G; sb += B; if (R >= SAT_LEVEL || G >= SAT_LEVEL || B >= SAT_LEVEL) sat++;
+      }
+      vals.set(r.id, [sr / m.length, sg / m.length, sb / m.length, sat / m.length]);
+    }
+    lastVals = vals;
+    if (recording) {
+      if (rec.t.length === 0) rec.t0 = tFrame;
+      rec.t.push((tFrame - rec.t0) / 1000); rec.media.push(meta && meta.mediaTime != null ? meta.mediaTime : NaN);
+      rec.presented.push(presented != null ? presented : NaN); rec.proc.push((tNow - rec.t0) / 1000);
+      for (const r of rec.rois) {
+        const v = vals.get(r.id) || [NaN, NaN, NaN, NaN];
+        r.R.push(v[0]); r.G.push(v[1]); r.B.push(v[2]); r.sat.push(v[3]);
+      }
+    } else {
+      preview.push({ t: tFrame / 1000, vals });
+      while (preview.length && tFrame / 1000 - preview[0].t > PREVIEW_SEC) preview.shift();
+    }
+    frameTimes.push(tFrame); while (frameTimes.length > 60) frameTimes.shift();
+    frameCount++;
+    drawOverlay();
+    if (frameCount % 3 === 0) { drawPlots(); updateMsg(); updateFps(); }
+  }
+
+  function drawOverlay() {
+    const lw = Math.max(1.5, W / 320);
+    ctx.font = `${Math.round(W / 32)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    for (const r of rois) {
+      const cx = r.x * W, cy = r.y * H, rad = r.r * W;
+      ctx.lineWidth = r === selected ? lw * 2.5 : lw; ctx.strokeStyle = roiColor(r);
+      ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = roiColor(r); ctx.fillText(r.label, cx, cy - rad - lw * 2);
+    }
+    if (recording) { ctx.fillStyle = '#ff5a5a'; ctx.beginPath(); ctx.arc(W - W / 30, W / 30, W / 70, 0, Math.PI * 2); ctx.fill(); }
+  }
+
+  // ---------- 図 ----------
+  function prepCanvas(c) {
+    const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    return { g, w, h };
+  }
+  function currentSeries(ch) {
+    // 記録中・記録後は記録データ、それ以外は直近の映像
+    if (rec && rec.t.length > 1) {
+      return { t: rec.t, rois: rec.rois.map(r => ({ r, v: r[['R', 'G', 'B'][ch]] })) };
+    }
+    const t = preview.map(p => p.t);
+    return { t, rois: rois.map(r => ({ r, v: preview.map(p => (p.vals.get(r.id) || [NaN, NaN, NaN])[ch]) })) };
+  }
+  function norm(v) {
+    const ok = v.filter(Number.isFinite); if (ok.length < 4) return null;
+    const lo = A.quantile(ok, 0.02), hi = A.quantile(ok, 0.98), h = (hi - lo) / 2, c = (hi + lo) / 2;
+    return { f: x => (h > 0.5 ? (x - c) / h : 0), flat: h <= 0.5 };
+  }
+  function drawPlots() {
+    const ch = Number($('waveCh').value), S = currentSeries(ch);
+    // 波形
+    { const { g, w, h } = prepCanvas($('wave'));
+      if (S.t.length > 1) {
+        const t0 = S.t[0], t1 = S.t[S.t.length - 1], span = Math.max(t1 - t0, 1), pad = 6;
+        const X = t => pad + (t - t0) / span * (w - 2 * pad), Y = v => h / 2 - v * (h / 2 - pad);
+        g.strokeStyle = '#2a2f37'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+        for (const { r, v } of S.rois) {
+          if (r.role === 'ref') continue;
+          const n = norm(v); if (!n) continue;
+          g.strokeStyle = roiColor(r); g.lineWidth = r.role === 'blank' ? 2 : 1.5; g.beginPath();
+          let st = false;
+          for (let i = 0; i < S.t.length; i++) { if (!Number.isFinite(v[i])) continue; const x = X(S.t[i]), y = Y(n.f(v[i])); if (!st) { g.moveTo(x, y); st = true; } else g.lineTo(x, y); }
+          g.stroke();
+        }
+        g.fillStyle = '#9aa1ab'; g.font = '11px system-ui, sans-serif'; g.textAlign = 'right';
+        g.fillText(span.toFixed(0) + ' 秒', w - 6, h - 6);
+      } }
+    // リサージュ
+    { const { g, w, h } = prepCanvas($('liss'));
+      const s = Math.min(w, h), ox = (w - s) / 2, oy = (h - s) / 2, pad = 10;
+      const X = v => ox + s / 2 + v * (s / 2 - pad), Y = v => oy + s / 2 - v * (s / 2 - pad);
+      g.strokeStyle = '#2a2f37'; g.lineWidth = 1; g.strokeRect(ox + pad, oy + pad, s - 2 * pad, s - 2 * pad);
+      g.beginPath(); g.moveTo(X(-1), Y(-1)); g.lineTo(X(1), Y(1)); g.stroke();
+      const b = S.rois.find(o => o.r.role === 'blank');
+      if (b && S.t.length > 1) {
+        const nb = norm(b.v);
+        for (const o of S.rois) {
+          if (o.r.role !== 'sample' || !nb) continue;
+          const ns = norm(o.v); if (!ns) continue;
+          g.strokeStyle = roiColor(o.r); g.lineWidth = 1.5; g.beginPath(); let st = false;
+          for (let i = 0; i < S.t.length; i++) {
+            if (!Number.isFinite(b.v[i]) || !Number.isFinite(o.v[i])) continue;
+            const x = X(nb.f(b.v[i])), y = Y(ns.f(o.v[i]));
+            if (!st) { g.moveTo(x, y); st = true; } else g.lineTo(x, y);
+          }
+          g.stroke();
+        }
+      }
+      g.fillStyle = '#9aa1ab'; g.font = '11px system-ui, sans-serif'; g.textAlign = 'left';
+      g.fillText('ブランク →', ox + pad + 2, oy + s - pad - 4);
+    }
+  }
+
+  function updateMsg() {
+    const warn = [];
+    for (const r of rois) {
+      const v = lastVals.get(r.id); if (!v) continue;
+      if (v[3] > SAT_WARN) warn.push(r.label + ' が白飛びしています。光源ページの「表示の明るさ」を下げてください。');
+      else if (Math.max(v[0], v[1], v[2]) < DARK_LEVEL) warn.push(r.label + ' が暗すぎます。');
+    }
+    if (!stream) return;
+    if (!rois.some(r => r.role === 'blank')) setMsg('「枠を追加」で、ブランク・試料・基準の枠を置いてください。', 'warn');
+    else if (!rois.some(r => r.role === 'sample')) setMsg('試料の枠を置いてください。', 'warn');
+    else if (warn.length) setMsg(warn[0], 'bad');
+    else if (!recording) setMsg(droppedTotal ? `処理が追いつかず ${droppedTotal} コマ取りこぼしました（処理幅を下げると減ります）。` : '準備できました。', droppedTotal ? 'warn' : 'ok');
+  }
+  function updateFps() {
+    if (frameTimes.length < 2) return;
+    const dt = (frameTimes[frameTimes.length - 1] - frameTimes[0]) / (frameTimes.length - 1);
+    $('fps').textContent = dt > 0 ? (1000 / dt).toFixed(1) + ' fps' : '—';
+  }
+  function setMsg(t, cls) { const m = $('msg'); m.textContent = t; m.className = cls || ''; }
+
+  // ---------- 測定 ----------
+  async function startRec() {
+    if (!stream) return;
+    if (!rois.some(r => r.role === 'blank') || !rois.some(r => r.role === 'sample')) { setMsg('ブランクと試料の枠を置いてから測ってください。', 'bad'); return; }
+    if (masksDirty) buildMasks();
+    rec = {
+      t: [], media: [], presented: [], proc: [], t0: 0,
+      rois: rois.map(r => ({ id: r.id, label: r.label, role: r.role, x: r.x, y: r.y, r: r.r, pixels: (masks.get(r.id) || []).length, R: [], G: [], B: [], sat: [] })),
+      meta: { start: new Date(), note: $('note').value, lock: lockState, video: video.videoWidth + 'x' + video.videoHeight, proc: W + 'x' + H,
+        settings: track && track.getSettings ? track.getSettings() : {}, rvfc: hasRVFC },
+    };
+    recording = true; droppedTotal = 0; prevPresented = null; lastResult = null;
+    $('recBtn').textContent = '測定を止める'; $('recBtn').classList.add('primary');
+    for (const id of ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius', 'zeroBtn', 'addHistBtn', 'rawCsvBtn', 'pngBtn']) $(id).disabled = true;
+    $('result').innerHTML = '<p class="hint">測定中です。</p>';
+    setMsg('測定中です。光源や容器に触れないでください。', 'ok');
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    const maxSec = Number($('maxSec').value);
+    let cyc = { cycles: 0, reliable: false };
+    recTimer = setInterval(() => {
+      const sec = rec.t.length ? rec.t[rec.t.length - 1] : 0;
+      $('recStat').textContent = `測定中　${sec.toFixed(1)} 秒　ブランクの変化 ${cyc.reliable ? '約 ' + Math.min(cyc.cycles, 99).toFixed(1) + ' 周期' : '確認中'}（4周期＝2回転で止まります）`;
+      if (sec >= maxSec) stopRec('最長の時間に達したので止めました。');
+    }, 250);
+    checkTimer = setInterval(() => {
+      if (!recording || rec.t.length < 60) return;
+      const b = rec.rois.find(r => r.role === 'blank');
+      cyc = A.cyclesSoFar(rec.t, b.G, Number($('gamma').value) || 2.2);
+      if (cyc.reliable && cyc.cycles >= TARGET_CYCLES) stopRec();
+    }, 1000);
+  }
+  function stopRec(reason) {
+    if (!recording) return;
+    recording = false; clearInterval(recTimer); clearInterval(checkTimer);
+    rec.meta.dropped = droppedTotal;
+    $('recBtn').textContent = '測定開始'; $('recBtn').classList.remove('primary');
+    for (const id of ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius', 'rawCsvBtn', 'pngBtn']) $(id).disabled = false;
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    runNo++; rec.meta.run = runNo; lastRaw = rec; save();
+    const sec = rec.t.length ? rec.t[rec.t.length - 1] : 0;
+    $('recStat').textContent = `測定 ${runNo}：${sec.toFixed(1)} 秒、${rec.t.length} コマ` + (droppedTotal ? `（取りこぼし ${droppedTotal}）` : '') + (reason ? '　' + reason : '');
+    $('result').innerHTML = '<p class="hint">計算しています…</p>';
+    setTimeout(analyzeLast, 30);
+  }
+  $('recBtn').addEventListener('click', () => recording ? stopRec('手動で止めました。') : startRec());
+
+  function analyzeLast() {
+    if (!lastRaw) return;
+    const gamma = Number($('gamma').value) || 2.2;
+    lastResult = A.analyze({ t: lastRaw.t, rois: lastRaw.rois }, { gamma, useRatio: $('useRatio').checked });
+    renderResult();
+  }
+
+  // ---------- 結果 ----------
+  const sign = () => ($('signFlip').checked ? -1 : 1);
+  const fmt = (v, d = 1) => (Number.isFinite(v) ? (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d) : '—');
+  function zeroMatches() {
+    if (!zero || !lastRaw) return { ok: !zero, moved: [] };
+    const moved = [];
+    for (const r of lastRaw.rois) {
+      const z = zero.rois.find(o => o.label === r.label);
+      if (!z) continue;
+      if (Math.hypot((r.x - z.x) * W, (r.y - z.y) * H) > 3 || Math.abs(r.r - z.r) * W > 2) moved.push(r.label);
+    }
+    return { ok: true, moved };
+  }
+  function alphaOf(label, ch, method = 'A') {
+    const s = lastResult.channels[ch] && lastResult.channels[ch].samples[label]; if (!s) return NaN;
+    let v = s[method];
+    if (zero && zero.alpha[label] && Number.isFinite(zero.alpha[label][ch + method])) v -= zero.alpha[label][ch + method];
+    return sign() * v;
+  }
+  function renderResult() {
+    const R = lastResult, box = $('result');
+    if (!R || !R.ok) { box.innerHTML = `<p class="bad">${(R && R.messages.join(' ')) || '計算できませんでした。'}</p>`; return; }
+    const zm = zeroMatches();
+    const notes = [...R.messages];
+    if (zero && zm.moved.length) notes.push(`ゼロ点を取ったときから枠が動いています（${zm.moved.join('、')}）。ゼロ点を取り直してください。`);
+    const g = R.channels.G;
+    if (R.ref && Number.isFinite(g.refPM) && g.refPM > 0.05) notes.push(`基準の紙に偏光が残っています（p/m = ${(g.refPM * 100).toFixed(0)}%）。露出を固定するか、紙を2枚にしてください。`);
+    const rows = R.samples.map(lab => {
+      const s = g.samples[lab], warn = [];
+      if (s.m < 0.15) warn.push('明るさの変化が小さい');
+      if (Math.abs(s.A - s.B) > 1.0) warn.push('A と B の差が大きい');
+      if (s.sat > 0.01) warn.push('白飛び');
+      const roi = lastRaw.rois.find(r => r.label === lab);
+      const big = ch => `<span class="big" style="color:${CH_COLORS[ch]}">${fmt(alphaOf(lab, ch))}°</span>`;
+      return `<tr><td><span class="sw" style="background:${roiColor(roi)}"></span>${lab}</td><td>${big('R')}</td><td>${big('G')}</td><td>${big('B')}</td>` +
+        `<td>${fmt(alphaOf(lab, 'G', 'B'))}°</td><td class="note">${warn.join('、')}</td></tr>`;
+    }).join('');
+    box.innerHTML =
+      `<p class="stat">回転の周期 ${R.period.toFixed(1)} 秒、使った範囲 ${R.rotations} 回転（${R.usedSec.toFixed(1)} 秒）` +
+      `${R.useRatio ? '、基準との比あり' : '、基準との比なし'}、ガンマ ${R.gamma}${zero ? '、<span class="pill">ゼロ点を引いた値</span>' : ''}</p>` +
+      `<div class="tablewrap"><table><thead><tr><th>枠</th><th>赤 R</th><th>緑 G</th><th>青 B</th><th>確認（緑・別の方法）</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` +
+      (notes.length ? `<p class="warn">${notes.join('<br>')}</p>` : '') +
+      `<p class="hint">ずれの角度（旋光角、度）。ブランクを 0 とし、${zero ? 'ゼロ点（全部水のときの値）を引いています。' : 'ゼロ点はまだ引いていません。全部の容器に水を入れて測り、「この結果をゼロ点にする」を押すと、場所ごとの癖を差し引けます。'}</p>`;
+    $('zeroBtn').disabled = false; $('addHistBtn').disabled = false;
+  }
+
+  $('zeroBtn').addEventListener('click', () => {
+    if (!lastResult || !lastResult.ok) return;
+    const alpha = {};
+    for (const lab of lastResult.samples) {
+      alpha[lab] = {};
+      for (const ch of ['R', 'G', 'B']) { const s = lastResult.channels[ch].samples[lab]; alpha[lab][ch + 'A'] = s.A; alpha[lab][ch + 'B'] = s.B; }
+    }
+    zero = { date: new Date().toISOString(), run: lastRaw.meta.run, rois: lastRaw.rois.map(r => ({ label: r.label, x: r.x, y: r.y, r: r.r })), alpha };
+    save(); renderZero(); renderResult();
+  });
+  $('zeroClearBtn').addEventListener('click', () => { zero = null; save(); renderZero(); if (lastResult) renderResult(); });
+  function renderZero() {
+    $('zeroStat').textContent = zero ? `ゼロ点：測定 ${zero.run} の値（${new Date(zero.date).toLocaleString()}）。容器・紙・光源を動かさず、中身だけを替えて測ってください。` : 'ゼロ点：なし';
+  }
+
+  // ---------- 記録一覧と濃度のグラフ ----------
+  $('addHistBtn').addEventListener('click', () => {
+    if (!lastResult || !lastResult.ok) return;
+    for (const lab of lastResult.samples) {
+      history.push({ id: Date.now().toString(36) + lab, run: lastRaw.meta.run, label: lab, note: lastRaw.meta.note || '', c: '',
+        raw: Object.fromEntries(['R', 'G', 'B'].map(ch => [ch, lastResult.channels[ch].samples[lab].A])),
+        zero: zero && zero.alpha[lab] ? Object.fromEntries(['R', 'G', 'B'].map(ch => [ch, zero.alpha[lab][ch + 'A']])) : null,
+        sign: sign() });
+    }
+    $('addHistBtn').disabled = true; save(); renderHistory();
+  });
+  const histAlpha = (h, ch) => h.sign * (h.raw[ch] - (h.zero ? h.zero[ch] : 0));
+  function renderHistory() {
+    const tb = $('hist');
+    if (!history.length) { tb.innerHTML = '<tr><td class="hint">まだありません。測ったあとに「記録一覧に加える」を押します。</td></tr>'; drawConc(); return; }
+    tb.innerHTML = '<thead><tr><th>測定</th><th>枠</th><th>濃度 g/mL</th><th>R</th><th>G</th><th>B</th><th></th></tr></thead><tbody>' +
+      history.map((h, i) => `<tr><td>${h.run}</td><td>${h.label}${h.zero ? '' : ' <span class="pill">ゼロ点なし</span>'}</td>` +
+        `<td><input type="number" step="0.01" min="0" data-i="${i}" value="${h.c}" style="width:6em;min-height:36px;padding:4px 8px"></td>` +
+        ['R', 'G', 'B'].map(ch => `<td style="color:${CH_COLORS[ch]}">${fmt(histAlpha(h, ch))}</td>`).join('') +
+        `<td><button class="small" data-del="${i}">削除</button></td></tr>`).join('') + '</tbody>';
+    tb.querySelectorAll('input[data-i]').forEach(el => el.addEventListener('change', () => { history[Number(el.dataset.i)].c = el.value; save(); drawConc(); }));
+    tb.querySelectorAll('button[data-del]').forEach(el => el.addEventListener('click', () => { history.splice(Number(el.dataset.del), 1); save(); renderHistory(); }));
+    drawConc();
+  }
+  function drawConc() {
+    const { g, w, h } = prepCanvas($('conc'));
+    const pts = history.filter(x => x.c !== '' && Number.isFinite(Number(x.c)));
+    const padL = 40, padB = 26, padT = 10, padR = 10;
+    let cmax = Math.max(0.1, ...pts.map(p => Number(p.c))) * 1.1;
+    let amax = 1, amin = 0;
+    for (const p of pts) for (const ch of ['R', 'G', 'B']) { const a = histAlpha(p, ch); if (Number.isFinite(a)) { amax = Math.max(amax, a); amin = Math.min(amin, a); } }
+    amax *= 1.15; amin = amin < 0 ? amin * 1.15 : 0;
+    const X = c => padL + c / cmax * (w - padL - padR), Y = a => h - padB - (a - amin) / (amax - amin) * (h - padB - padT);
+    g.strokeStyle = '#3a3f47'; g.lineWidth = 1; g.beginPath(); g.moveTo(padL, padT); g.lineTo(padL, h - padB); g.lineTo(w - padR, h - padB); g.stroke();
+    if (amin < 0) { g.strokeStyle = '#2a2f37'; g.beginPath(); g.moveTo(padL, Y(0)); g.lineTo(w - padR, Y(0)); g.stroke(); }
+    g.fillStyle = '#9aa1ab'; g.font = '11px system-ui, sans-serif';
+    g.textAlign = 'center'; g.fillText('濃度 [g/mL]', (padL + w - padR) / 2, h - 6);
+    g.fillText(cmax.toFixed(2), w - padR - 14, h - padB + 12); g.fillText('0', padL, h - padB + 12);
+    g.textAlign = 'right'; g.fillText(amax.toFixed(1) + '°', padL - 4, padT + 8); g.fillText(amin.toFixed(0) + '°', padL - 4, h - padB);
+    const slopes = {};
+    for (const ch of ['R', 'G', 'B']) {
+      g.fillStyle = CH_COLORS[ch];
+      let sxy = 0, sxx = 0;
+      for (const p of pts) { const c = Number(p.c), a = histAlpha(p, ch); if (!Number.isFinite(a)) continue; g.beginPath(); g.arc(X(c), Y(a), 4, 0, Math.PI * 2); g.fill(); sxy += c * a; sxx += c * c; }
+      if ($('fitLine').checked && sxx > 0) {
+        const k = sxy / sxx; slopes[ch] = k;
+        g.strokeStyle = CH_COLORS[ch]; g.lineWidth = 1.5; g.setLineDash([5, 4]); g.beginPath(); g.moveTo(X(0), Y(0)); g.lineTo(X(cmax), Y(k * cmax)); g.stroke(); g.setLineDash([]);
+      }
+    }
+    const depth = Number($('depth').value);
+    $('slopes').innerHTML = $('fitLine').checked && Object.keys(slopes).length
+      ? ['R', 'G', 'B'].filter(ch => slopes[ch] !== undefined).map(ch => `<span style="color:${CH_COLORS[ch]}">${ch}：傾き ${slopes[ch].toFixed(1)} °/(g/mL)` +
+          (depth > 0 ? `、傾き÷深さ ${(slopes[ch] / (depth / 10)).toFixed(1)} °/(dm·g/mL)` : '') + '</span>').join('<br>')
+      : (pts.length ? '' : '記録一覧に濃度を入力すると、点が表示されます。');
+  }
+  $('depth').addEventListener('change', () => { save(); drawConc(); });
+  $('fitLine').addEventListener('change', () => { save(); drawConc(); });
+  $('histClearBtn').addEventListener('click', () => { if (history.length && confirmClear()) { history = []; save(); renderHistory(); } });
+  let clearArmed = 0;
+  function confirmClear() {
+    const now = Date.now();
+    if (now - clearArmed < 3000) { clearArmed = 0; $('histClearBtn').textContent = '記録一覧を消す'; return true; }
+    clearArmed = now; $('histClearBtn').textContent = 'もう一度押すと消えます';
+    setTimeout(() => { $('histClearBtn').textContent = '記録一覧を消す'; }, 3000);
+    return false;
+  }
+
+  // ---------- 保存 ----------
+  function stamp(d) { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+  function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+  $('rawCsvBtn').addEventListener('click', () => {
+    if (!lastRaw) return;
+    const m = lastRaw.meta;
+    const head = [
+      '# polarization-lab verification kit record v1',
+      '# app: rotation.html (M2) run ' + m.run,
+      '# start: ' + m.start.toISOString(),
+      '# note: ' + (m.note || '').replace(/[\r\n]+/g, ' '),
+      '# user_agent: ' + navigator.userAgent,
+      '# video: ' + m.video + ' / processing: ' + m.proc,
+      '# frame_time: ' + (m.rvfc ? 'requestVideoFrameCallback (captureTime or expectedDisplayTime)' : 'requestAnimationFrame'),
+      '# camera_lock: ' + m.lock,
+      '# track_settings: ' + JSON.stringify(m.settings),
+      '# dropped_frames: ' + (m.dropped || 0),
+      '# rois: ' + JSON.stringify(lastRaw.rois.map(r => ({ label: r.label, role: r.role, x: +r.x.toFixed(4), y: +r.y.toFixed(4), r: +r.r.toFixed(4), pixels: r.pixels }))),
+      '# values: mean of pixel values 0-255 inside each circle, no gamma correction, no ratio. *_sat = fraction of pixels with any channel >= ' + SAT_LEVEL,
+    ];
+    const cols = ['frame', 't_ms', 'media_time', 'presented_frames', 'proc_ms'];
+    for (const r of lastRaw.rois) cols.push(r.label + '_R', r.label + '_G', r.label + '_B', r.label + '_sat');
+    const lines = lastRaw.t.map((t, i) => {
+      const row = [i, (t * 1000).toFixed(2), Number.isFinite(lastRaw.media[i]) ? lastRaw.media[i].toFixed(4) : '', Number.isFinite(lastRaw.presented[i]) ? lastRaw.presented[i] : '', (lastRaw.proc[i] * 1000).toFixed(2)];
+      for (const r of lastRaw.rois) row.push(r.R[i].toFixed(3), r.G[i].toFixed(3), r.B[i].toFixed(3), r.sat[i].toFixed(4));
+      return row.join(',');
+    });
+    download(new Blob(['﻿' + head.join('\n') + '\n' + cols.join(',') + '\n' + lines.join('\n') + '\n'], { type: 'text/csv' }), `pol_m2_${stamp(m.start)}_run${m.run}.csv`);
+  });
+  $('histCsvBtn').addEventListener('click', () => {
+    const lines = ['run,label,concentration_g_per_mL,alpha_R_deg,alpha_G_deg,alpha_B_deg,zero_subtracted,note'];
+    for (const h of history) lines.push([h.run, h.label, h.c, ...['R', 'G', 'B'].map(ch => histAlpha(h, ch).toFixed(3)), h.zero ? 1 : 0, '"' + (h.note || '').replace(/"/g, '""') + '"'].join(','));
+    download(new Blob(['﻿' + lines.join('\n') + '\n'], { type: 'text/csv' }), `pol_m2_results_${stamp(new Date())}.csv`);
+  });
+  $('pngBtn').addEventListener('click', () => {
+    const cs = [view, $('wave'), $('liss')], gap = 8;
+    const w = Math.max(...cs.map(c => c.width)), h = cs.reduce((s, c) => s + c.height * (w / c.width), 0) + gap * 2;
+    const out = document.createElement('canvas'); out.width = w; out.height = Math.round(h);
+    const g = out.getContext('2d'); g.fillStyle = '#14161a'; g.fillRect(0, 0, w, h);
+    let y = 0; for (const c of cs) { const ch = c.height * (w / c.width); g.drawImage(c, 0, y, w, ch); y += ch + gap; }
+    out.toBlob(b => b && download(b, `pol_m2_${stamp(lastRaw ? lastRaw.meta.start : new Date())}.png`), 'image/png');
+  });
+
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && recording && !wakeLock && 'wakeLock' in navigator) { try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+  });
+  window.addEventListener('resize', () => { drawPlots(); drawConc(); });
+
+  // ---------- 起動 ----------
+  load(); relabel(); renderZero(); renderHistory(); drawPlots();
+  setMsg(rois.length ? '前回の枠を読み込みました。「カメラを開始」を押してください。' : '「カメラを開始」を押してください。');
+  window.__polApp = { get rois() { return rois; }, get lastResult() { return lastResult; }, get recording() { return recording; } };
+})();
+</script>
+</body>
+</html>

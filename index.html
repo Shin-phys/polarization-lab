@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#14161a">
-<title>偏光ラボ 検証キット</title>
+<title>偏光ラボ</title>
 <style>
   :root { --bg: #14161a; --panel: #1e2127; --line: #343943; --text: #eceef1; --muted: #9aa1ab; --accent: #4da3ff; }
   * { box-sizing: border-box; }
@@ -29,22 +29,28 @@
 </head>
 <body>
 <main>
-  <h1>偏光ラボ 検証キット</h1>
-  <p class="sub">装置が成立するかを実物で確かめるための2ページです。解析はせず、数値を CSV に残します。</p>
+  <h1>偏光ラボ</h1>
+  <p class="sub">回転させた偏光で、明るさの変わり方を測ります。</p>
 
   <div class="cards">
+    <a class="card" href="app/rotation.html"><b>旋光を測る</b><span>上から見下ろすスマホで開く。ブランクと試料を同時に記録し、ずれの角度を色ごとに求める。</span></a>
     <a class="card" href="kit/light.html"><b>光源ページ</b><span>回転台に載せるスマホで開く。一様な白（または単色）を全画面で表示する。</span></a>
+  </div>
+
+  <h2>検証キット</h2>
+  <p class="muted">装置を確かめるためのページです。解析はせず、数値を CSV に残します。</p>
+  <div class="cards">
     <a class="card" href="kit/record.html"><b>記録ページ</b><span>上から見下ろすスマホで開く。円形の枠を置き、フレームごとの明るさを記録する。</span></a>
   </div>
 
-  <h2>手順の概略</h2>
+  <h2>旋光の測り方（概略）</h2>
   <ol>
-    <li>光源のスマホで光源ページを開き、「表示を始める」を押す。偏光フィルムと穴あきの紙を載せ、回転台に置く。</li>
-    <li>測定用のスマホで記録ページを開き、カメラを開始する。カメラの前には偏光フィルムを貼る。</li>
-    <li>基準（紙）と偏光（穴）などの枠を置き、記録する。</li>
-    <li>CSV を保存し、表計算か <code>tools/analyze.py</code> で解析する。</li>
+    <li>光源のスマホで光源ページを開き、「表示を始める」を押す。偏光フィルムを貼り、回転台に載せる。</li>
+    <li>その上に台（金属の網など）を置き、穴を開けたコピー用紙、穴あきの黒い紙の底、黒い筒で巻いた容器を載せる。</li>
+    <li>測定用のスマホで「旋光を測る」を開き、カメラの前に偏光フィルムを貼って、上から見下ろす。</li>
+    <li>ブランク・試料・基準の枠を置く。全部水で1回測ってゼロ点にし、試料に替えてもう一度測る。</li>
   </ol>
-  <p class="muted">確かめる項目と手順の詳細は、リポジトリの <a href="https://github.com/Shin-phys/polarization-lab/blob/main/docs/07-verification-kit.md">docs/07-verification-kit.md</a> にあります。カメラを使うので、HTTPS のページ（GitHub Pages など）で開いてください。</p>
+  <p class="muted">詳しい手順はリポジトリの <a href="https://github.com/Shin-phys/polarization-lab/blob/main/docs/08-app-rotation.md">docs/08-app-rotation.md</a> と <a href="https://github.com/Shin-phys/polarization-lab/blob/main/docs/04-polarimeter-mode.md">docs/04-polarimeter-mode.md</a> にあります。カメラを使うので、HTTPS のページ（GitHub Pages など）で開いてください。</p>
 </main>
 </body>
 </html>

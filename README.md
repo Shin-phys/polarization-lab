@@ -20,7 +20,7 @@
 
 ## 3. 状態と方向性
 
-- 構想段階（仕様 0.7）。装置を確かめるための検証キットを作った。実物での検証はこれから。
+- 仕様 0.8。旋光（M2）の本体の初版と、装置を確かめるための検証キットがある。実機・実物での検証はこれから。
 - 【決定】とした事項はまだない。以下は検討中の方向性である。
   - 平置きの配置で測る。
   - 回転台（キャンドゥのソーラー式回転台など）を使う方法を検討している。
@@ -53,6 +53,7 @@
 | [docs/05-lesson-design.md](docs/05-lesson-design.md) | 授業での使い方 |
 | [docs/06-open-issues.md](docs/06-open-issues.md) | 未決事項・要検証 |
 | [docs/07-verification-kit.md](docs/07-verification-kit.md) | 検証キット（光源ページ・記録ページ・解析スクリプト）の使い方 |
+| [docs/08-app-rotation.md](docs/08-app-rotation.md) | 旋光（M2）の本体の使い方と仕様との対応 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 改訂履歴 |
 | [docs/reference/containers.md](docs/reference/containers.md) | 参考：同時測定用の容器の候補と確認方法 |
 | [docs/reference/prior-work.md](docs/reference/prior-work.md) | 参考：先行事例 |
@@ -60,13 +61,14 @@
 
 ## 6. 引き継ぎ（次のチャットで最初にやること）
 
-アプリの本体を作る前に、装置が成立するかを実物で確かめる。
+旋光（M2）の本体の初版ができた。次は実機と実物で確かめる。
 
-1. 回転台の回転速度と回転むらを、phyphox のジャイロで測る（POL-Q-03）。1回目（1.2回転）は済み。周期 約17.7秒、速さは1回転の中で約2.4倍変わる。3回転以上の記録と、載せ方を変えた記録で、むらの原因を確かめる（`tools/turntable.py`）。
-2. 検証キット（`docs/07-verification-kit.md`）を GitHub Pages で公開し、iPhone と Android で動くか確かめる。
-3. 検証キットで、基準の紙に残る偏光を測る（POL-Q-01）。判定の目安は p/m が数%以下。露出を固定した記録で判断する。
-4. 記録したデータを `tools/analyze.py` にかけ、旋光角の推定法と比の取り方を比べる（POL-Q-21・22）。
-5. 結果をもとに、初版の装置構成と角度の取り方を決める（POL-Q-04）。
+1. GitHub Pages で公開し、`app/rotation.html` と `kit/light.html` が iPhone と Android で動くか確かめる。
+2. 全部水でゼロ点を取り、ショ糖水溶液（0.2〜0.5 g/mL）で測る。符号が合わなければ「符号を反転する」で合わせる。結果の注意（p/m、A と B の差、明るさの変化）を記録する。
+3. 生データの CSV を `tools/analyze.py` にかけ、推定法と比の取り方を比べる（POL-Q-21・22）。基準の紙に残る偏光は、露出を固定した記録で判断する（POL-Q-01）。
+4. 回転台の記録を3回転以上で取り直し、むらの原因を確かめる（POL-Q-03、`tools/turntable.py`）。
+5. 黒い底と筒、台（網・ガラス）の効果を確かめる（POL-Q-25）。
+6. 結果をもとに、初版の装置構成を決める（POL-Q-04）。その後、マリュスの法則（M1）の本体を作る。
 
 実物が要らない POL-Q-14（技術構成）と POL-Q-15（共通原則の適用）は、並行して決められる。
 
@@ -75,15 +77,16 @@
 ```
 .
 ├── README.md        この文書
-├── index.html       検証キットの入口
+├── index.html       入口
+├── app/             本体（旋光を測る：rotation.html、解析：pol-analysis.js）
 ├── kit/             検証キット（光源ページ、記録ページ）
 ├── tools/           解析スクリプト
 └── docs/
-    ├── 01〜07, CHANGELOG.md
+    ├── 01〜08, CHANGELOG.md
     ├── reference/   参考資料（仕様の本文ではないもの）
     └── common/      共通文書の写し
 ```
 
 - `docs/common/` は、仕様書群のリポジトリ（スマホ物理実験アプリ 仕様書）の `common/` の写しである。改訂は正本で行い、ここへ写す。
 - 改訂ルールは `docs/common/spec-conventions.md` に従う。コミットメッセージの先頭は `pol:` とする。
-- GitHub Pages で main ブランチのルートを公開する。アプリ本体を作るときに、入口（`index.html`）を本体に差し替える。
+- GitHub Pages で main ブランチのルートを公開する。
