@@ -21,20 +21,48 @@
       });
     }
 
-    async function load(file) {
+    // 1コマが描ける状態になるのを待つ（iOS の Safari は、一度再生しないとコマを用意しないことがある）
+    function waitFrame(ms) {
+      return new Promise(resolve => {
+        let done = false;
+        const finish = ok => { if (done) return; done = true; clearTimeout(timer); video.removeEventListener('timeupdate', onTU); resolve(ok); };
+        const onTU = () => { if (video.readyState >= 2) finish(true); };
+        const timer = setTimeout(() => finish(video.readyState >= 2), ms);
+        video.addEventListener('timeupdate', onTU);
+        if (hasRVFC) video.requestVideoFrameCallback(() => finish(true));
+        if (video.readyState >= 2 && !video.paused) finish(true);
+      });
+    }
+
+    const state = () => `readyState=${video.readyState}、networkState=${video.networkState}${video.error ? '、error=' + video.error.code : ''}`;
+
+    async function load(file, onStep = () => {}) {
       unload();
       url = URL.createObjectURL(file);
       video.srcObject = null;
-      video.muted = true; video.playsInline = true; video.loop = false; video.autoplay = false;
-      video.preload = 'auto';
+      video.muted = true; video.defaultMuted = true; video.playsInline = true;
+      video.setAttribute('playsinline', ''); video.setAttribute('muted', '');
+      video.loop = false; video.autoplay = false; video.preload = 'auto';
       video.src = url;
+      video.load();
+      onStep('動画の情報を読み込んでいます…');
       try {
-        if (video.readyState < 1) await waitEvent('loadedmetadata');
-        if (video.readyState < 2) await waitEvent('loadeddata');
+        if (video.readyState < 1) await waitEvent('loadedmetadata', 30000);
       } catch (e) {
-        unload();
-        throw new Error('この動画は、このブラウザで再生できません。iPhone なら「設定 → カメラ → フォーマット」を「互換性優先」にして撮り直してください。');
+        const st = state(); unload();
+        throw new Error('動画を開けませんでした（' + st + '）。このブラウザが動画の形式に対応していない可能性があります。iPhone なら「設定 → カメラ → フォーマット」を「互換性優先」にして撮り直してください。');
       }
+      onStep('最初のコマを準備しています…');
+      // 一度だけ短く再生して止める（iOS の Safari で最初のコマを用意させるため）
+      let played = false;
+      try { await video.play(); played = true; } catch (e) { /* 再生を許されないときは、そのまま待つ */ }
+      const ok = await waitFrame(10000);
+      video.pause();
+      if (!ok && video.readyState < 2) {
+        const st = state(); unload();
+        throw new Error('最初のコマを用意できませんでした（' + st + (played ? '' : '、再生が許可されませんでした') + '）。もう一度「動画を選ぶ」から読み込んでください。');
+      }
+      onStep('先頭に戻しています…');
       await seekStart();
       info = { name: file.name, size: file.size, lastModified: file.lastModified, duration: video.duration,
         width: video.videoWidth, height: video.videoHeight, type: file.type || '' };
@@ -44,7 +72,7 @@
     async function seekStart() {
       video.pause();
       if (video.currentTime !== 0) {
-        const p = waitEvent('seeked').catch(() => {});
+        const p = waitEvent('seeked', 5000).catch(() => {});
         video.currentTime = 0;
         await p;
       }
