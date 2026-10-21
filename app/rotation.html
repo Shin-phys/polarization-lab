@@ -31,7 +31,10 @@
   .card h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
   #view { width: auto; max-width: 100%; height: auto; max-height: 34vh; display: block; margin: 0 auto; background: #000; border-radius: 8px; touch-action: none; }
   @media (min-width: 960px) { #view { max-height: none; width: 100%; } }
-  video { display: none; }
+  video { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  [hidden] { display: none !important; }
+  label.filebtn { display: flex; align-items: center; justify-content: center; min-height: 46px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  label.filebtn.off { opacity: .45; pointer-events: none; }
   canvas.plot { width: 100%; display: block; background: #0d0f12; border-radius: 8px; }
   #wave { height: 150px; }
   .plots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
@@ -86,21 +89,36 @@
 
   <section id="controls">
     <div class="card">
-      <h2>1. カメラ</h2>
+      <h2>1. 映像</h2>
       <div class="row">
-        <select id="camSel" class="grow"><option value="">背面カメラ（既定）</option></select>
+        <select id="srcSel" class="grow">
+          <option value="camera">カメラ</option>
+          <option value="file">動画ファイル</option>
+        </select>
         <select id="resSel" class="fix">
           <option value="480">処理幅 480</option>
           <option value="640" selected>処理幅 640</option>
           <option value="960">処理幅 960</option>
         </select>
       </div>
-      <div class="row"><button class="primary" id="camBtn">カメラを開始</button></div>
-      <div class="row">
-        <button id="lockBtn" disabled>露出・ピント・色を固定</button>
-        <button id="autoBtn" disabled>自動に戻す</button>
+      <div id="camCtl">
+        <div class="row"><select id="camSel" class="grow"><option value="">背面カメラ（既定）</option></select></div>
+        <div class="row"><button class="primary" id="camBtn">カメラを開始</button></div>
+        <div class="row">
+          <button id="lockBtn" disabled>露出・ピント・色を固定</button>
+          <button id="autoBtn" disabled>自動に戻す</button>
+        </div>
+        <p class="hint" id="lockMsg">固定できるかは端末によります。固定できなくても測れます。</p>
       </div>
-      <p class="hint" id="lockMsg">固定できるかは端末によります。固定できなくても測れます。</p>
+      <div id="fileCtl" hidden>
+        <div class="row"><label class="filebtn" id="fileLabel">動画を選ぶ<input type="file" id="fileIn" accept="video/*" hidden></label></div>
+        <p class="stat" id="fileInfo">まだ読み込んでいません。</p>
+        <div class="row">
+          <span class="stat fix">再生の速さ</span>
+          <select id="rateSel" class="fix"><option value="1" selected>1倍</option><option value="2">2倍</option></select>
+        </div>
+        <p class="hint">撮るとき：回転台を3回転以上撮る。iPhone の標準カメラでは、画面を長押しして AE/AF ロックをかける。「設定 → カメラ」で HDR ビデオをオフにし、フォーマットを「互換性優先」にしておく。動画は端末の中で再生するだけで、外部には送られません。</p>
+      </div>
     </div>
 
     <div class="card">
@@ -198,12 +216,16 @@
 </main>
 
 <script src="pol-analysis.js"></script>
+<script src="../kit/video-file.js"></script>
 <script>
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
   const A = window.PolAnalysis;
   const video = $('video'), view = $('view'), ctx = view.getContext('2d', { willReadFrequently: true });
+  const VF = window.PolVideoFile.create(video, { onFrame: m => processFrame(m), onEnded: () => stopRec('動画の終わりまで解析しました。') });
+  let srcMode = 'camera';
+  const fileMode = () => srcMode === 'file';
 
   const ROLE = {
     ref:    { name: '基準',    prefix: 'ref',   color: '#ffffff' },
@@ -230,7 +252,7 @@
     try {
       localStorage.setItem(STORE, JSON.stringify({
         rois, zero, history, runNo,
-        res: $('resSel').value, cam: $('camSel').value, gamma: $('gamma').value, maxSec: $('maxSec').value,
+        src: srcMode, rate: $('rateSel').value, res: $('resSel').value, cam: $('camSel').value, gamma: $('gamma').value, maxSec: $('maxSec').value,
         useRatio: $('useRatio').checked, signFlip: $('signFlip').checked, waveCh: $('waveCh').value,
         depth: $('depth').value, fitLine: $('fitLine').checked,
       }));
@@ -243,6 +265,8 @@
       if (s.zero && s.zero.alpha) zero = s.zero;
       if (Array.isArray(s.history)) history = s.history;
       runNo = s.runNo || 0;
+      if (s.src === 'file' || s.src === 'camera') srcMode = s.src;
+      if (s.rate) $('rateSel').value = s.rate;
       if (s.res) $('resSel').value = s.res;
       if (s.gamma) $('gamma').value = s.gamma;
       if (s.maxSec) $('maxSec').value = s.maxSec;
@@ -399,13 +423,7 @@
   let lastMediaTime = -1;
   function onAnimFrame() { if (video.currentTime !== lastMediaTime) { lastMediaTime = video.currentTime; processFrame(null); } if (stream) requestAnimationFrame(onAnimFrame); else loopRunning = false; }
 
-  function processFrame(meta) {
-    if (!video.videoWidth) return;
-    const tNow = performance.now();
-    const tFrame = meta && meta.captureTime ? meta.captureTime : meta && meta.expectedDisplayTime ? meta.expectedDisplayTime : tNow;
-    const presented = meta ? meta.presentedFrames : null;
-    if (presented != null && prevPresented != null && presented - prevPresented > 1) droppedTotal += presented - prevPresented - 1;
-    prevPresented = presented;
+  function grab() {
     ctx.drawImage(video, 0, 0, W, H);
     if (masksDirty) buildMasks();
     const data = ctx.getImageData(0, 0, W, H).data;
@@ -420,10 +438,22 @@
       vals.set(r.id, [sr / m.length, sg / m.length, sb / m.length, sat / m.length]);
     }
     lastVals = vals;
+    return vals;
+  }
+  function paintStill() { if (!video.videoWidth || recording) return; grab(); drawOverlay(); updateMsg(); drawPlots(); }
+
+  function processFrame(meta) {
+    if (!video.videoWidth) return;
+    const tNow = performance.now();
+    const tFrame = meta && meta.fromFile ? meta.captureTime : meta && meta.captureTime ? meta.captureTime : meta && meta.expectedDisplayTime ? meta.expectedDisplayTime : tNow;
+    const presented = meta ? meta.presentedFrames : null;
+    if (presented != null && prevPresented != null && presented - prevPresented > 1) droppedTotal += presented - prevPresented - 1;
+    prevPresented = presented;
+    const vals = grab();
     if (recording) {
-      if (rec.t.length === 0) rec.t0 = tFrame;
+      if (rec.t.length === 0) { rec.t0 = tFrame; rec.wall0 = tNow; }
       rec.t.push((tFrame - rec.t0) / 1000); rec.media.push(meta && meta.mediaTime != null ? meta.mediaTime : NaN);
-      rec.presented.push(presented != null ? presented : NaN); rec.proc.push((tNow - rec.t0) / 1000);
+      rec.presented.push(presented != null ? presented : NaN); rec.proc.push((tNow - rec.wall0) / 1000);
       for (const r of rec.rois) {
         const v = vals.get(r.id) || [NaN, NaN, NaN, NaN];
         r.R.push(v[0]); r.G.push(v[1]); r.B.push(v[2]); r.sat.push(v[3]);
@@ -522,10 +552,11 @@
       if (v[3] > SAT_WARN) warn.push(r.label + ' が白飛びしています。光源ページの「表示の明るさ」を下げてください。');
       else if (Math.max(v[0], v[1], v[2]) < DARK_LEVEL) warn.push(r.label + ' が暗すぎます。');
     }
-    if (!stream) return;
+    if (!stream && !VF.loaded) return;
     if (!rois.some(r => r.role === 'blank')) setMsg('「枠を追加」で、ブランク・試料・基準の枠を置いてください。', 'warn');
     else if (!rois.some(r => r.role === 'sample')) setMsg('試料の枠を置いてください。', 'warn');
     else if (warn.length) setMsg(warn[0], 'bad');
+    else if (!recording && fileMode()) setMsg('準備できました。「再生して解析」を押してください。', 'ok');
     else if (!recording) setMsg(droppedTotal ? `処理が追いつかず ${droppedTotal} コマ取りこぼしました（処理幅を下げると減ります）。` : '準備できました。', droppedTotal ? 'warn' : 'ok');
   }
   function updateFps() {
@@ -537,21 +568,32 @@
 
   // ---------- 測定 ----------
   async function startRec() {
-    if (!stream) return;
+    if (!stream && !(fileMode() && VF.loaded)) return;
     if (!rois.some(r => r.role === 'blank') || !rois.some(r => r.role === 'sample')) { setMsg('ブランクと試料の枠を置いてから測ってください。', 'bad'); return; }
     if (masksDirty) buildMasks();
     rec = {
       t: [], media: [], presented: [], proc: [], t0: 0,
       rois: rois.map(r => ({ id: r.id, label: r.label, role: r.role, x: r.x, y: r.y, r: r.r, pixels: (masks.get(r.id) || []).length, R: [], G: [], B: [], sat: [] })),
-      meta: { start: new Date(), note: $('note').value, lock: lockState, video: video.videoWidth + 'x' + video.videoHeight, proc: W + 'x' + H,
-        settings: track && track.getSettings ? track.getSettings() : {}, rvfc: hasRVFC },
+      meta: { start: new Date(), note: $('note').value, lock: fileMode() ? '動画ファイル（撮影時の設定による）' : lockState, video: video.videoWidth + 'x' + video.videoHeight, proc: W + 'x' + H,
+        settings: track && track.getSettings ? track.getSettings() : {}, rvfc: hasRVFC, source: srcMode, file: fileMode() ? VF.info : null },
     };
     recording = true; droppedTotal = 0; prevPresented = null; lastResult = null;
     $('recBtn').textContent = '測定を止める'; $('recBtn').classList.add('primary');
-    for (const id of ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius', 'zeroBtn', 'addHistBtn', 'rawCsvBtn', 'pngBtn']) $(id).disabled = true;
+    for (const id of ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius', 'zeroBtn', 'addHistBtn', 'rawCsvBtn', 'pngBtn', 'srcSel', 'fileIn', 'rateSel']) $(id).disabled = true;
+    $('fileLabel').classList.add('off');
     $('result').innerHTML = '<p class="hint">測定中です。</p>';
-    setMsg('測定中です。光源や容器に触れないでください。', 'ok');
+    setMsg(fileMode() ? '動画を再生しながら解析しています。' : '測定中です。光源や容器に触れないでください。', 'ok');
     try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    if (fileMode()) {
+      const total = VF.info ? VF.info.duration : 0;
+      recTimer = setInterval(() => {
+        const sec = rec.t.length ? rec.t[rec.t.length - 1] : 0;
+        $('recStat').textContent = `解析中　${sec.toFixed(1)} / ${total.toFixed(1)} 秒`;
+      }, 250);
+      try { await VF.play(Number($('rateSel').value) || 1); }
+      catch (e) { stopRec('動画を再生できませんでした（' + e.name + '）。'); }
+      return;
+    }
     const maxSec = Number($('maxSec').value);
     let cyc = { cycles: 0, reliable: false };
     recTimer = setInterval(() => {
@@ -569,9 +611,12 @@
   function stopRec(reason) {
     if (!recording) return;
     recording = false; clearInterval(recTimer); clearInterval(checkTimer);
+    if (fileMode()) VF.stop();
     rec.meta.dropped = droppedTotal;
-    $('recBtn').textContent = '測定開始'; $('recBtn').classList.remove('primary');
-    for (const id of ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius', 'rawCsvBtn', 'pngBtn']) $(id).disabled = false;
+    $('recBtn').textContent = fileMode() ? '再生して解析' : '測定開始'; $('recBtn').classList.remove('primary');
+    for (const id of ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius', 'rawCsvBtn', 'pngBtn', 'srcSel', 'fileIn', 'rateSel']) $(id).disabled = false;
+    $('fileLabel').classList.remove('off');
+    if (fileMode()) $('lockBtn').disabled = $('autoBtn').disabled = true;
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     runNo++; rec.meta.run = runNo; lastRaw = rec; save();
     const sec = rec.t.length ? rec.t[rec.t.length - 1] : 0;
@@ -729,7 +774,8 @@
       '# note: ' + (m.note || '').replace(/[\r\n]+/g, ' '),
       '# user_agent: ' + navigator.userAgent,
       '# video: ' + m.video + ' / processing: ' + m.proc,
-      '# frame_time: ' + (m.rvfc ? 'requestVideoFrameCallback (captureTime or expectedDisplayTime)' : 'requestAnimationFrame'),
+      '# source: ' + (m.source === 'file' && m.file ? `video file "${m.file.name}" ${m.file.width}x${m.file.height} ${m.file.duration.toFixed(2)} s, playback rate ${$('rateSel').value}` : 'camera'),
+      '# frame_time: ' + (m.source === 'file' ? 'video mediaTime' + (m.rvfc ? ' (requestVideoFrameCallback)' : ' (currentTime polling)') : (m.rvfc ? 'requestVideoFrameCallback (captureTime or expectedDisplayTime)' : 'requestAnimationFrame')),
       '# camera_lock: ' + m.lock,
       '# track_settings: ' + JSON.stringify(m.settings),
       '# dropped_frames: ' + (m.dropped || 0),
@@ -764,9 +810,44 @@
   });
   window.addEventListener('resize', () => { drawPlots(); drawConc(); });
 
+  // ---------- 映像の入力の切り替え ----------
+  function setSource(mode) {
+    if (recording) { $('srcSel').value = srcMode; return; }
+    srcMode = mode; $('srcSel').value = mode;
+    $('camCtl').hidden = mode !== 'camera'; $('fileCtl').hidden = mode !== 'file';
+    if (mode === 'file') {
+      stopCamera(); $('camBtn').textContent = 'カメラを開始'; $('lockBtn').disabled = true; $('autoBtn').disabled = true;
+      $('recBtn').textContent = '再生して解析'; $('recBtn').disabled = !VF.loaded;
+      $('fps').textContent = '—';
+      if (!VF.loaded) setMsg('「動画を選ぶ」で、撮影した動画を読み込んでください。');
+    } else {
+      VF.unload(); $('fileInfo').textContent = 'まだ読み込んでいません。';
+      $('recBtn').textContent = '測定開始'; $('recBtn').disabled = !stream;
+      setMsg(rois.length ? '前回の枠を読み込みました。「カメラを開始」を押してください。' : '「カメラを開始」を押してください。');
+    }
+    save();
+  }
+  $('srcSel').addEventListener('change', () => setSource($('srcSel').value));
+  $('rateSel').addEventListener('change', save);
+  $('fileIn').addEventListener('change', async () => {
+    const f = $('fileIn').files[0]; if (!f) return;
+    setMsg('動画を読み込んでいます…'); $('recBtn').disabled = true;
+    try {
+      const info = await VF.load(f);
+      resize(); preview.length = 0; rec = null; droppedTotal = 0; prevPresented = null;
+      $('fileInfo').textContent = `${info.name}（${info.width}×${info.height}、${info.duration.toFixed(1)} 秒）`;
+      $('recBtn').disabled = false;
+      VF.idle(paintStill); paintStill();
+      setMsg('動画を読み込みました。枠を置いてから「再生して解析」を押してください。', 'ok');
+    } catch (e) {
+      $('fileInfo').textContent = e.message; setMsg(e.message, 'bad');
+    }
+    $('fileIn').value = '';
+  });
+
   // ---------- 起動 ----------
   load(); relabel(); renderZero(); renderHistory(); drawPlots();
-  setMsg(rois.length ? '前回の枠を読み込みました。「カメラを開始」を押してください。' : '「カメラを開始」を押してください。');
+  setSource(srcMode);
   window.__polApp = { get rois() { return rois; }, get lastResult() { return lastResult; }, get recording() { return recording; } };
 })();
 </script>

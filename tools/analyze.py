@@ -232,7 +232,9 @@ def analyze(meta, cols, labels, ch="G", base=None, ref=None, out=print):
         out(f"  基準に残る偏光：p/m = {p / m * 100:.1f}%（ガンマ2.2、{ref} の変動の向きは {base} から {dphi:+.0f}°）"
             f"  → 目安は数%以下（POL-Q-01）")
         lock = meta.get("camera_lock", "")
-        if "露出○" not in lock:
+        if meta.get("source", "").startswith("video file"):
+            out("  ※ 動画ファイルの記録です。撮影時に AE/AF ロック（露出の固定）をかけていれば、p/m をそのまま判断に使えます。")
+        elif "露出○" not in lock:
             out("  ※ 露出が固定されていない記録です。自動露出による明るさの変動が p に混ざるので、"
                 "p/m は大きめに出ます。p/m は露出を固定した記録で判断してください。")
 

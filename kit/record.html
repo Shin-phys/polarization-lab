@@ -31,7 +31,10 @@
   main > * { min-width: 0; }
   #view { width: 100%; max-width: 100%; height: auto; display: block; background: #000; border-radius: 8px; touch-action: none; }
   #chart { width: 100%; height: 160px; display: block; background: #0d0f12; border-radius: 8px; margin-top: 10px; }
-  video { display: none; }
+  video { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  [hidden] { display: none !important; }
+  label.filebtn { display: flex; align-items: center; justify-content: center; min-height: 46px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  label.filebtn.off { opacity: .45; pointer-events: none; }
   button, select, input[type=text] {
     font: inherit; color: var(--text); background: #2a2e35; border: 1px solid #3c424c; border-radius: 10px;
     padding: 10px 12px; min-height: 46px; }
@@ -92,15 +95,20 @@
 
   <section id="controls">
     <div class="card">
-      <h2>1. カメラ</h2>
+      <h2>1. 映像</h2>
       <div class="row">
-        <select id="camSel" class="grow"><option value="">背面カメラ（既定）</option></select>
+        <select id="srcSel" class="grow">
+          <option value="camera">カメラ</option>
+          <option value="file">動画ファイル</option>
+        </select>
         <select id="resSel">
           <option value="480">処理幅 480</option>
           <option value="640" selected>処理幅 640</option>
           <option value="960">処理幅 960</option>
         </select>
       </div>
+      <div id="camCtl">
+      <div class="row"><select id="camSel" class="grow"><option value="">背面カメラ（既定）</option></select></div>
       <div class="row">
         <button class="primary" id="camBtn">カメラを開始</button>
       </div>
@@ -110,6 +118,16 @@
       </div>
       <p class="hint" id="lockMsg">固定できるかは端末によります。固定できない端末でも記録はできます。</p>
       <details><summary>カメラの設定値</summary><pre class="settings" id="settings">—</pre></details>
+      </div>
+      <div id="fileCtl" hidden>
+        <div class="row"><label class="filebtn" id="fileLabel">動画を選ぶ<input type="file" id="fileIn" accept="video/*" hidden></label></div>
+        <p class="stat" id="fileInfo">まだ読み込んでいません。</p>
+        <div class="row">
+          <span class="stat">再生の速さ</span>
+          <select id="rateSel"><option value="1" selected>1倍</option><option value="2">2倍</option></select>
+        </div>
+        <p class="hint">iPhone の標準カメラで撮るときは、画面を長押しして AE/AF ロックをかける（露出が固定され、POL-Q-01 の確認に使える）。「設定 → カメラ」で HDR ビデオをオフにし、フォーマットを「互換性優先」にしておく。動画は端末の中で再生するだけで、外部には送られません。動画は最後まで記録します。</p>
+      </div>
     </div>
 
     <div class="card" style="margin-top:12px">
@@ -158,12 +176,16 @@
   </section>
 </main>
 
+<script src="video-file.js"></script>
 <script>
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
   const video = $('video'), view = $('view'), ctx = view.getContext('2d', { willReadFrequently: true });
   const chart = $('chart'), cctx = chart.getContext('2d');
+  const VF = window.PolVideoFile.create(video, { onFrame: m => processFrame(m), onEnded: () => { stopRecording(); $('recStat').textContent += '　動画の終わりまで記録しました。'; } });
+  let srcMode = 'camera';
+  const fileMode = () => srcMode === 'file';
 
   const ROLE = {
     ref:    { name: '基準',     prefix: 'ref',   color: '#ffffff' },
@@ -186,6 +208,7 @@
   const frameTimes = [];
   let frameCount = 0, prevPresented = null, droppedTotal = 0;
 
+  let recWall0 = 0;
   let recording = false, saved = true, recRows = [], recT0 = 0, recMeta = null, recTimer = null, recDur = 0;
   let wakeLock = null;
 
@@ -193,13 +216,15 @@
   function saveState() {
     try {
       localStorage.setItem('pol-kit-record', JSON.stringify({
-        rois, res: $('resSel').value, cam: $('camSel').value, ch: $('chartCh').value, dur: $('durSel').value }));
+        rois, src: srcMode, rate: $('rateSel').value, res: $('resSel').value, cam: $('camSel').value, ch: $('chartCh').value, dur: $('durSel').value }));
     } catch (e) {}
   }
   function loadState() {
     try {
       const s = JSON.parse(localStorage.getItem('pol-kit-record') || '{}');
       if (Array.isArray(s.rois)) rois = s.rois.filter(r => ROLE[r.role] && [r.x, r.y, r.r].every(Number.isFinite));
+      if (s.src === 'file' || s.src === 'camera') srcMode = s.src;
+      if (s.rate) $('rateSel').value = s.rate;
       if (s.res) $('resSel').value = s.res;
       if (s.ch) $('chartCh').value = s.ch;
       if (s.dur) $('durSel').value = s.dur;
@@ -424,15 +449,7 @@
     if (stream) requestAnimationFrame(onAnimFrame); else loopRunning = false;
   }
 
-  function processFrame(meta) {
-    if (!video.videoWidth) return;
-    const tNow = performance.now();
-    const tFrame = meta && meta.captureTime ? meta.captureTime
-                 : meta && meta.expectedDisplayTime ? meta.expectedDisplayTime : tNow;
-    const presented = meta ? meta.presentedFrames : null;
-    if (presented != null && prevPresented != null && presented - prevPresented > 1) droppedTotal += presented - prevPresented - 1;
-    prevPresented = presented;
-
+  function grab() {
     ctx.drawImage(video, 0, 0, W, H);
     if (masksDirty) buildMasks();
     const data = ctx.getImageData(0, 0, W, H).data;
@@ -450,12 +467,26 @@
       vals.set(r.id, [sr / n, sg / n, sb / n, sat / n]);
     }
     lastVals = vals;
+    return vals;
+  }
+  function paintStill() { if (!video.videoWidth || recording) return; grab(); drawOverlay(); updateTable(); }
+
+  function processFrame(meta) {
+    if (!video.videoWidth) return;
+    const tNow = performance.now();
+    const tFrame = meta && meta.fromFile ? meta.captureTime : meta && meta.captureTime ? meta.captureTime
+                 : meta && meta.expectedDisplayTime ? meta.expectedDisplayTime : tNow;
+    const presented = meta ? meta.presentedFrames : null;
+    if (presented != null && prevPresented != null && presented - prevPresented > 1) droppedTotal += presented - prevPresented - 1;
+    prevPresented = presented;
+
+    const vals = grab();
 
     // 記録
     if (recording) {
-      if (recRows.length === 0) recT0 = tFrame;
+      if (recRows.length === 0) { recT0 = tFrame; recWall0 = tNow; }
       const row = [recRows.length, (tFrame - recT0).toFixed(2), meta && meta.mediaTime != null ? meta.mediaTime.toFixed(4) : '',
-        presented != null ? presented : '', (tNow - recT0).toFixed(2)];
+        presented != null ? presented : '', (tNow - recWall0).toFixed(2)];
       for (const r of recMeta.rois) {
         const v = vals.get(r.id) || [NaN, NaN, NaN, NaN];
         row.push(v[0].toFixed(3), v[1].toFixed(3), v[2].toFixed(3), v[3].toFixed(4));
@@ -540,9 +571,11 @@
       if (v[3] > SAT_WARN) warnings.push(r.label + ' が白飛びしています。光源ページの「表示の明るさ」を下げてください（端末の画面の明るさは下げない）。');
       else if (Math.max(v[0], v[1], v[2]) < DARK_LEVEL) warnings.push(r.label + ' が暗すぎます。');
     }
-    if (!rois.length && stream) setMsg('「枠を追加」で測定領域を置いてください。', 'warn');
+    const live = stream || VF.loaded;
+    if (!rois.length && live) setMsg('「枠を追加」で測定領域を置いてください。', 'warn');
     else if (warnings.length) setMsg(warnings[0], 'bad');
-    else if (stream) setMsg(dropNote(), droppedTotal ? 'warn' : 'ok');
+    else if (fileMode() && VF.loaded && !recording) setMsg('準備できました。「記録開始」を押すと、動画を再生しながら記録します。', 'ok');
+    else if (live) setMsg(dropNote(), droppedTotal ? 'warn' : 'ok');
   }
   function dropNote() {
     if (!hasRVFC) return 'このブラウザはフレームごとの時刻が取れないため、時刻は描画のタイミングで記録します。';
@@ -557,34 +590,38 @@
 
   // ---------- 記録 ----------
   async function startRecording() {
-    if (!stream) return;
+    if (!stream && !(fileMode() && VF.loaded)) return;
     if (!rois.length) { setMsg('枠を1つ以上置いてから記録してください。', 'bad'); return; }
     if (masksDirty) buildMasks();
-    recRows = []; recording = true; saved = false; recDur = Number($('durSel').value);
+    recRows = []; recording = true; saved = false; recDur = fileMode() ? 0 : Number($('durSel').value);
     droppedTotal = 0; prevPresented = null;
     recMeta = {
       start: new Date(),
       rois: rois.map(r => ({ id: r.id, label: r.label, role: r.role, x: +r.x.toFixed(4), y: +r.y.toFixed(4), r: +r.r.toFixed(4),
         pixels: (masks.get(r.id) || []).length })),
       settings: track && track.getSettings ? track.getSettings() : {},
-      video: video.videoWidth + 'x' + video.videoHeight, proc: W + 'x' + H, lock: lockState,
-      note: $('note').value, rvfc: hasRVFC,
+      video: video.videoWidth + 'x' + video.videoHeight, proc: W + 'x' + H, lock: fileMode() ? '動画ファイル（撮影時の設定による）' : lockState,
+      note: $('note').value, rvfc: hasRVFC, source: srcMode, file: fileMode() ? VF.info : null, rate: $('rateSel').value,
     };
     $('recBtn').textContent = '記録停止'; $('recBtn').classList.add('primary');
     $('csvBtn').disabled = true;
-    ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius'].forEach(id => $(id).disabled = true);
+    ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius', 'srcSel', 'fileIn', 'rateSel'].forEach(id => $(id).disabled = true);
+    $('fileLabel').classList.add('off');
     try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
     recTimer = setInterval(() => {
       const sec = recRows.length > 1 ? (Number(recRows[recRows.length - 1][1]) / 1000) : 0;
-      $('recStat').textContent = `記録中　${sec.toFixed(1)} 秒　${recRows.length} コマ`;
+      $('recStat').textContent = `記録中　${sec.toFixed(1)} 秒　${recRows.length} コマ` + (fileMode() && VF.info ? `（動画 ${VF.info.duration.toFixed(1)} 秒）` : '');
     }, 250);
+    if (fileMode()) { try { await VF.play(Number($('rateSel').value) || 1); } catch (e) { stopRecording(); setMsg('動画を再生できませんでした（' + e.name + '）。', 'bad'); } }
   }
   function stopRecording() {
     if (!recording) return;
     recording = false; clearInterval(recTimer);
+    if (fileMode()) VF.stop();
     recMeta.dropped = droppedTotal;
     $('recBtn').textContent = '記録開始'; $('recBtn').classList.remove('primary');
-    ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius'].forEach(id => $(id).disabled = false);
+    ['addBtn', 'delBtn', 'camBtn', 'resSel', 'camSel', 'roleSel', 'radius', 'srcSel', 'fileIn', 'rateSel'].forEach(id => $(id).disabled = false);
+    $('fileLabel').classList.remove('off');
     $('csvBtn').disabled = recRows.length === 0; $('pngBtn').disabled = false;
     const sec = recRows.length > 1 ? Number(recRows[recRows.length - 1][1]) / 1000 : 0;
     const fps = sec > 0 ? (recRows.length - 1) / sec : 0;
@@ -611,7 +648,8 @@
       '# note: ' + (m.note || '').replace(/[\r\n]+/g, ' '),
       '# user_agent: ' + navigator.userAgent,
       '# video: ' + m.video + ' / processing: ' + m.proc,
-      '# frame_time: ' + (m.rvfc ? 'requestVideoFrameCallback (captureTime or expectedDisplayTime)' : 'requestAnimationFrame'),
+      '# source: ' + (m.source === 'file' && m.file ? `video file "${m.file.name}" ${m.file.width}x${m.file.height} ${m.file.duration.toFixed(2)} s, playback rate ${m.rate}` : 'camera'),
+      '# frame_time: ' + (m.source === 'file' ? 'video mediaTime' + (m.rvfc ? ' (requestVideoFrameCallback)' : ' (currentTime polling)') : (m.rvfc ? 'requestVideoFrameCallback (captureTime or expectedDisplayTime)' : 'requestAnimationFrame')),
       '# camera_lock: ' + m.lock,
       '# track_settings: ' + JSON.stringify(m.settings),
       '# dropped_frames: ' + (m.dropped || 0),
@@ -638,10 +676,38 @@
   });
   window.addEventListener('beforeunload', e => { if (recording || (recRows.length && !saved)) { e.preventDefault(); e.returnValue = ''; } });
 
+  // ---------- 映像の入力の切り替え ----------
+  function setSource(mode) {
+    if (recording) { $('srcSel').value = srcMode; return; }
+    srcMode = mode; $('srcSel').value = mode;
+    $('camCtl').hidden = mode !== 'camera'; $('fileCtl').hidden = mode !== 'file';
+    if (mode === 'file') {
+      stopCamera(); $('camBtn').textContent = 'カメラを開始'; $('lockBtn').disabled = true; $('autoBtn').disabled = true;
+      $('recBtn').disabled = !VF.loaded; $('fps').textContent = '—';
+      if (!VF.loaded) setMsg('「動画を選ぶ」で、撮影した動画を読み込んでください。');
+    } else {
+      VF.unload(); $('fileInfo').textContent = 'まだ読み込んでいません。'; $('recBtn').disabled = !stream;
+      setMsg(rois.length ? '前回の枠を読み込みました。「カメラを開始」を押してください。' : '「カメラを開始」を押してください。');
+    }
+    saveState();
+  }
+  $('srcSel').addEventListener('change', () => setSource($('srcSel').value));
+  $('rateSel').addEventListener('change', saveState);
+  $('fileIn').addEventListener('change', async () => {
+    const f = $('fileIn').files[0]; if (!f) return;
+    setMsg('動画を読み込んでいます…'); $('recBtn').disabled = true;
+    try {
+      const info = await VF.load(f);
+      resize(); droppedTotal = 0; prevPresented = null; hist.length = 0;
+      $('fileInfo').textContent = `${info.name}（${info.width}×${info.height}、${info.duration.toFixed(1)} 秒）`;
+      $('recBtn').disabled = false; VF.idle(paintStill); paintStill();
+    } catch (e) { $('fileInfo').textContent = e.message; setMsg(e.message, 'bad'); }
+    $('fileIn').value = '';
+  });
+
   // ---------- 起動 ----------
   loadState(); relabel(); buildTable();
-  if (!rois.length) setMsg('「カメラを開始」を押してください。');
-  else setMsg('前回の枠を読み込みました。「カメラを開始」を押してください。');
+  setSource(srcMode);
 })();
 </script>
 </body>
