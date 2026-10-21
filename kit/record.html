@@ -182,6 +182,7 @@
 </main>
 
 <script src="video-file.js"></script>
+<script src="loupe.js"></script>
 <script>
 (() => {
   'use strict';
@@ -189,6 +190,12 @@
   const video = $('video'), view = $('view'), ctx = view.getContext('2d', { willReadFrequently: true });
   const chart = $('chart'), cctx = chart.getContext('2d');
   const VF = window.PolVideoFile.create(video, { onFrame: m => processFrame(m), onEnded: () => { stopRecording(); $('recStat').textContent += '　動画の終わりまで記録しました。'; } });
+  const loupe = window.PolLoupe.create({ wrap: view.parentElement, video, view });
+  function showLoupe(r) {
+    if (!r) return;
+    loupe.show({ x: r.x, y: r.y, r: r.r, color: roiColor(r), label: r.label },
+      rois.filter(o => o !== r).map(o => ({ x: o.x, y: o.y, r: o.r, color: roiColor(o) })));
+  }
   let srcMode = 'camera';
   const fileMode = () => srcMode === 'file';
 
@@ -309,6 +316,7 @@
       if (recording) return;
       drag = { r: best, dx: p.x - best.x, dy: p.y - best.y, id: ev.pointerId };
       view.setPointerCapture(ev.pointerId);
+      showLoupe(best);
     }
   });
   view.addEventListener('pointermove', ev => {
@@ -317,14 +325,16 @@
     drag.r.x = Math.min(1, Math.max(0, p.x - drag.dx));
     drag.r.y = Math.min(1, Math.max(0, p.y - drag.dy));
     masksDirty = true;
+    showLoupe(drag.r);
   });
-  const endDrag = () => { if (drag) { drag = null; saveState(); } };
+  const endDrag = () => { if (drag) { drag = null; saveState(); loupe.hideSoon(700); } };
   view.addEventListener('pointerup', endDrag);
   view.addEventListener('pointercancel', endDrag);
 
   $('radius').addEventListener('input', () => {
     if (!selected || recording) return;
     selected.r = Number($('radius').value); masksDirty = true; saveState();
+    showLoupe(selected); loupe.hideSoon(1500);
   });
   $('addBtn').addEventListener('click', () => { if (!recording) addRoi($('roleSel').value); });
   $('delBtn').addEventListener('click', () => { if (!recording) deleteSelected(); });
@@ -512,6 +522,7 @@
   }
 
   function drawOverlay() {
+    if (loupe.visible) loupe.update();
     const lw = Math.max(1.5, W / 320);
     ctx.font = `${Math.round(W / 32)}px system-ui, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
