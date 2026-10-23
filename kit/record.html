@@ -126,10 +126,11 @@
       <div id="fileCtl" hidden>
         <div class="row"><label class="filebtn" id="fileLabel">動画を選ぶ<input type="file" id="fileIn" accept="video/*" hidden></label></div>
         <p class="stat" id="fileInfo">まだ読み込んでいません。</p>
+        <p class="hint">コマの取りこぼしが多いとき（結果の欄や CSV の「取りこぼし」）は、再生の速さを 3/4倍 や 1/2倍 に下げると減ります。動画内の時刻で記録するので、速さを変えても結果は変わりません。</p>
         <p class="hint warn">iPhone で「写真ライブラリ」から選んだあと白い丸のまま進まないときは、写真アプリの共有ボタンから「"ファイル"に保存」し、「動画を選ぶ」→「ファイルを選択」で選んでください（写真ライブラリから渡すときの形式の変換で止まることがあります）。</p>
         <div class="row">
           <span class="stat">再生の速さ</span>
-          <select id="rateSel"><option value="1" selected>1倍</option><option value="2">2倍</option></select>
+          <select id="rateSel"><option value="0.5">1/2倍</option><option value="0.75">3/4倍</option><option value="1" selected>1倍</option><option value="2">2倍</option></select>
         </div>
         <p class="hint">iPhone の標準カメラで撮るときは、画面を長押しして AE/AF ロックをかける（露出が固定され、POL-Q-01 の確認に使える）。「設定 → カメラ」で HDR ビデオをオフにし、フォーマットを「互換性優先」にしておく。動画は端末の中で再生するだけで、外部には送られません。動画は最後まで記録します。</p>
       </div>
